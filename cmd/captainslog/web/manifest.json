@@ -1,0 +1,29 @@
+{
+    "id": "/",
+    "name": "Captain's Log",
+    "short_name": "Captain's Log",
+    "description": "Local speech-to-text — Record, transcribe, copy. No cloud.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#0b1120",
+    "theme_color": "#0b1120",
+    "categories": [
+        "productivity",
+        "utilities"
+    ],
+    "icons": [
+        {
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

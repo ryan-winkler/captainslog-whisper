@@ -1,0 +1,17 @@
+[Unit]
+Description=Captain's Log — Local Speech-to-Text
+After=network.target whisper-fastapi.service
+
+[Service]
+ExecStart=%h/.local/bin/captainslog
+Environment=CAPTAINSLOG_WHISPER_URL=http://127.0.0.1:5000
+Environment=CAPTAINSLOG_VAULT_DIR=%h/Documents/Vault/Dictation
+Environment=CAPTAINSLOG_ENABLE_LLM=true
+Environment=CAPTAINSLOG_LLM_URL=http://127.0.0.1:11434
+StandardOutput=journal+console
+StandardError=journal+console
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Captain's Log
+Comment=Local, private speech-to-text powered by Whisper
+Exec=xdg-open http://localhost:8090
+Icon=captainslog
+Terminal=false
+Type=Application
+Categories=Audio;Utility;
+Keywords=speech;text;transcription;whisper;voice;dictation;
+StartupWMClass=captainslog

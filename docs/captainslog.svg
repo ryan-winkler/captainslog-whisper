@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#2a1f0a"/>
+      <stop offset="100%" stop-color="#0f1119"/>
+    </radialGradient>
+    <linearGradient id="badge" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#f5c542"/>
+      <stop offset="100%" stop-color="#c4942a"/>
+    </linearGradient>
+    <filter id="badgeGlow">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="120" fill="url(#glow)" stroke="#c4942a" stroke-width="3" stroke-opacity="0.4"/>
+  <!-- Starfleet-style chevron/communicator badge -->
+  <g filter="url(#badgeGlow)" transform="translate(128, 125)">
+    <!-- Main chevron -->
+    <path d="M0,-55 L40,30 Q20,50 0,42 Q-20,50 -40,30 Z" fill="url(#badge)" opacity="0.95"/>
+    <!-- Inner star/highlight -->
+    <ellipse cx="0" cy="-5" rx="8" ry="12" fill="#fff8e0" opacity="0.5"/>
+  </g>
+  <!-- Subtle mic wave arcs -->
+  <path d="M168,85 Q185,128 168,171" stroke="#c4942a" stroke-width="2" stroke-opacity="0.3" fill="none" stroke-linecap="round"/>
+  <path d="M182,75 Q205,128 182,181" stroke="#c4942a" stroke-width="2" stroke-opacity="0.2" fill="none" stroke-linecap="round"/>
+</svg>

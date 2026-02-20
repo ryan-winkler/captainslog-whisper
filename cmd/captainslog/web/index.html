@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captain's Log — Local Speech-to-Text</title>
+    <meta name="description"
+        content="Captain's log, supplemental. Private, local speech-to-text transcription powered by Whisper. No subspace transmissions.">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0b1120">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖖</text></svg>">
+</head>
+
+<body>
+    <a href="#transcriptionSection" class="skip-link">Skip to transcription</a>
+    <div class="app">
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🖖</span>
+                <h1>Captain's Log</h1>
+                <span class="badge">LOCAL</span>
+            </div>
+            <div class="header-meta">
+                <span class="stardate-display" id="stardateDisplay" title="Current stardate"></span>
+            </div>
+            <div class="header-actions">
+                <div class="status-dot" id="backendStatus" title="Backend status"></div>
+                <button class="icon-btn" id="miniToggle" title="Toggle mini mode (M)" aria-label="Toggle mini mode">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                        <rect x="4" y="4" width="16" height="16" rx="2" />
+                        <line x1="4" y1="12" x2="20" y2="12" />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="settingsBtn" title="Preferences (,)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Record Section -->
+            <section class="record-section" aria-label="Recording controls">
+                <div class="waveform-container" id="waveformContainer">
+                    <canvas id="waveform" width="600" height="80" aria-label="Audio waveform visualisation"
+                        role="img"></canvas>
+                    <p class="waveform-placeholder" id="placeholder">Captain's log, supplemental. Awaiting voice
+                        input...</p>
+                </div>
+
+                <div class="controls">
+                    <button class="btn-record" id="recordBtn" title="Record (Space)" aria-label="Start recording">
+                        <svg id="micIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                            <line x1="12" y1="19" x2="12" y2="23" />
+                            <line x1="8" y1="23" x2="16" y2="23" />
+                        </svg>
+                        <svg id="stopIcon" class="hidden" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="6" width="12" height="12" rx="1" />
+                        </svg>
+                    </button>
+                    <div class="source-selector">
+                        <select id="audioSource" class="select source-select" title="Audio input source"
+                            aria-label="Audio input source">
+                            <option value="default">Default Microphone</option>
+                        </select>
+                        <button class="source-refresh" id="refreshSources" title="Refresh audio sources"
+                            aria-label="Refresh audio sources">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14"
+                                height="14">
+                                <polyline points="23 4 23 10 17 10" />
+                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                            </svg>
+                        </button>
+                    </div>
+                    <span class="timer" id="timer">00:00</span>
+                </div>
+
+                <!-- Upload Zone -->
+                <div class="upload-zone" id="uploadZone" role="region" aria-label="File upload">
+                    <input type="file" id="fileInput" accept="audio/*,video/*,.wav,.mp3,.mp4,.m4a,.ogg,.flac,.webm"
+                        multiple hidden aria-label="Select audio or video files">
+                    <p>Drop audio/video file here or <button class="link-btn" id="browseBtn">browse</button></p>
+                    <span class="file-types">wav · mp3 · mp4 · m4a · ogg · flac · webm</span>
+                </div>
+                <div class="shortcuts-hint" aria-label="Keyboard shortcuts">
+                    <span><kbd>Space</kbd> Record</span>
+                    <span><kbd>Ctrl</kbd>+<kbd>C</kbd> Copy</span>
+                    <span><kbd>Ctrl</kbd>+<kbd>S</kbd> Save</span>
+                    <span><kbd>,</kbd> Settings</span>
+                    <span><kbd>M</kbd> Mini</span>
+                    <span><kbd>Esc</kbd> Close</span>
+                </div>
+            </section>
+
+            <!-- Latest transcription -->
+            <section class="latest-section" id="transcriptionSection" aria-label="Latest transcription">
+                <div class="latest-header">
+                    <h2>Latest transcription</h2>
+                    <span class="latest-hint" id="latestHint">most recent only</span>
+                </div>
+                <div class="log-entry latest-card">
+                    <div class="log-entry-body">
+                        <div class="transcription-text" id="transcriptionText"></div>
+                    </div>
+                </div>
+                <div class="processing" id="processing" aria-live="polite" role="status">
+                    <div class="spinner"></div>
+                    <span id="processingLabel">Processing transmission...</span>
+                </div>
+                <div class="transcription-actions">
+                    <button class="action-btn" id="copyBtn" title="Copy to clipboard (Ctrl+C)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
+                        Copy
+                    </button>
+                    <button class="action-btn" id="saveBtn" title="Save transcription (Ctrl+S)">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                            <polyline points="17 21 17 13 7 13 7 21" />
+                            <polyline points="7 3 7 8 15 8" />
+                        </svg>
+                        Save
+                    </button>
+                    <button class="action-btn" id="exportBtn" title="Export transcription">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Export
+                    </button>
+                    <button class="action-btn" id="exportAsBtn" title="Export as specific format">
+                        Export As…
+                    </button>
+                    <button class="action-btn" id="llmBtn" title="Send to Local LLM" style="display:none;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path
+                                d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2V6a4 4 0 0 1 4-4z" />
+                            <circle cx="9" cy="14" r="1" />
+                            <circle cx="15" cy="14" r="1" />
+                        </svg>
+                        Send to AI
+                    </button>
+                    <button class="action-btn" id="goToTextBtn" title="Open text file folder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        Text
+                    </button>
+                    <button class="action-btn" id="goToAudioBtn" title="Open audio file folder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 18V5l12-2v13" />
+                            <circle cx="6" cy="18" r="3" />
+                            <circle cx="18" cy="16" r="3" />
+                        </svg>
+                        Audio
+                    </button>
+                </div>
+            </section>
+
+            <!-- Pinned entries (own island) -->
+            <section class="pinned-section" id="pinnedSection" style="display:none;" aria-label="Pinned transcriptions">
+                <div class="pinned-header">
+                    <h3>📌 Pinned</h3>
+                </div>
+                <div class="pinned-list" id="pinnedList"></div>
+            </section>
+
+            <!-- Recent history -->
+            <section class="history-section" id="historySection" aria-label="Recent transcriptions">
+                <div class="history-header">
+                    <h3>Recent <span class="history-count" id="historyCount"></span></h3>
+                    <button class="history-select-btn" id="historySelectBtn" title="Select entries">Select</button>
+                </div>
+                <input type="search" class="history-search" id="historySearch" placeholder="Search transcriptions…"
+                    aria-label="Search transcriptions">
+
+                <!-- Bulk action bar -->
+                <div class="history-bulk-bar hidden" id="historyBulkBar">
+                    <label class="bulk-select-all">
+                        <input type="checkbox" id="bulkSelectAll"> Select all
+                    </label>
+                    <div class="bulk-actions">
+                        <button class="bulk-btn" id="bulkCopy" title="Copy selected">📋 Copy</button>
+                        <button class="bulk-btn" id="bulkSavePKM" title="Save selected">💾 Save</button>
+                        <button class="bulk-btn" id="bulkExport" title="Export selected">📥 Export</button>
+                    </div>
+                </div>
+
+                <!-- History entries -->
+                <div class="history-list" id="historyList"></div>
+            </section>
+        </main>
+
+
+        <footer class="footer">
+            <span>All logs stored locally. No subspace transmissions.</span>
+            <div>
+                <a href="/healthz" target="_blank" class="footer-link">Status</a>
+                ·
+                <a href="https://github.com/ryan-winkler/captainslog-whisper/issues/new?labels=bug&template=bug_report.md&title=%5BBug%5D+"
+                    target="_blank" class="footer-link">Report Bug</a>
+                ·
+                <a href="/healthz?diag" target="_blank" class="footer-link">Diagnose</a>
+            </div>
+            <span class="cli-hint">CLI: captainslog --help</span>
+        </footer>
+    </div>
+
+    <!-- Preferences Modal -->
+    <div class="modal-overlay hidden" id="settingsModal" role="dialog" aria-modal="true" aria-label="Preferences">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>⚙️ Preferences</h2>
+                <button class="icon-btn" id="closeSettings" title="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <h3>📁 Storage</h3>
+                    <label class="setting">
+                        <span class="setting-label">Save directory</span>
+                        <span class="setting-hint">Where transcriptions are saved as markdown files. Works with
+                            Obsidian, Logseq, or any folder — your personal knowledge management (PKM) system.</span>
+                        <div class="setting-input-row">
+                            <input type="text" id="settVaultDir" class="input"
+                                placeholder="~/Documents/Vault/Dictation">
+                            <button class="btn-icon" data-open-dir="settVaultDir" title="Open folder">📂</button>
+                        </div>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Download directory</span>
+                        <div class="setting-input-row">
+                            <input type="text" id="settDownloadDir" class="input" placeholder="~/Downloads">
+                            <button class="btn-icon" data-open-dir="settDownloadDir" title="Open folder">📂</button>
+                        </div>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Recordings directory</span>
+                        <span class="setting-hint">Where audio recordings are saved (read-only)</span>
+                        <div class="setting-input-row">
+                            <input type="text" id="settRecordingsDir" class="input" readonly
+                                placeholder="~/.config/captainslog/recordings">
+                            <button class="btn-icon" data-open-dir="settRecordingsDir" title="Open folder">📂</button>
+                        </div>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Date format</span>
+                        <span class="setting-hint">Go time format for file names (default: 2006-01-02)</span>
+                        <select id="settDateFormat" class="input">
+                            <option value="2006-01-02">2006-01-02 (ISO)</option>
+                            <option value="02-01-2006">02-01-2006 (EU)</option>
+                            <option value="01-02-2006">01-02-2006 (US)</option>
+                            <option value="2006-01-02-Monday">2006-01-02-Monday (with day)</option>
+                            <option value="January-02-2006">January-02-2006 (named)</option>
+                        </select>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">File title prefix</span>
+                        <span class="setting-hint">Prefix for saved markdown files (e.g. "Dictation", "Meeting
+                            Notes")</span>
+                        <input type="text" id="settFileTitle" class="input" placeholder="Dictation">
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>🎙️ Transcription</h3>
+                    <label class="setting">
+                        <span class="setting-label">Default language</span>
+                        <select id="settLanguage" class="input">
+                            <option value="en">English</option>
+                            <option value="und">Auto-detect</option>
+                            <option value="ga">Gaeilge</option>
+                            <option value="pt">Português</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                            <option value="de">Deutsch</option>
+                        </select>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Initial prompt</span>
+                        <span class="setting-hint">Guide the model — add names, jargon, or context</span>
+                        <input type="text" id="settPrompt" class="input"
+                            placeholder="Meeting about warp core calibration...">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Whisper model</span>
+                        <select id="settModel" class="input">
+                            <option value="large-v3">large-v3 (best accuracy)</option>
+                            <option value="medium">medium (balanced)</option>
+                            <option value="small">small (fast)</option>
+                            <option value="base">base (fastest)</option>
+                            <option value="tiny">tiny (instant)</option>
+                        </select>
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Skip silence (VAD)</span>
+                        <span class="setting-hint">Automatically skip quiet parts of your recording to speed up
+                            processing. Recommended for long recordings with pauses.</span>
+                        <input type="checkbox" id="settVAD" class="toggle">
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Speaker labels</span>
+                        <span class="setting-hint">Tag who said what when multiple people are talking. Only works with
+                            WhisperX or backends that support diarization.</span>
+                        <input type="checkbox" id="settDiarize" class="toggle">
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>⚡ Behaviour</h3>
+                    <label class="setting row">
+                        <span class="setting-label">Auto-copy to clipboard</span>
+                        <span class="setting-hint">Automatically copy each transcription to your clipboard after
+                            processing.</span>
+                        <input type="checkbox" id="settAutoCopy" class="toggle" checked>
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Auto-save transcriptions</span>
+                        <span class="setting-hint">Automatically save each transcription as a markdown file to your save
+                            directory above.</span>
+                        <input type="checkbox" id="settAutoSave" class="toggle">
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Show stardates</span>
+                        <span class="setting-hint">Display TNG-era stardates instead of normal time</span>
+                        <input type="checkbox" id="settStardates" class="toggle" checked>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Time format</span>
+                        <span class="setting-hint">Clock display format in history and timestamps</span>
+                        <select id="settTimeFormat" class="input">
+                            <option value="system">System default</option>
+                            <option value="12h">12-hour (AM/PM)</option>
+                            <option value="24h">24-hour</option>
+                        </select>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">History limit</span>
+                        <span class="setting-hint">Maximum entries shown in the Recent list (0 = unlimited)</span>
+                        <input type="number" id="settHistoryLimit" class="input" min="0" max="100" value="5"
+                            placeholder="5">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Default export format</span>
+                        <span class="setting-hint">Format used by the Export button. Export As… lets you pick a
+                            different format.</span>
+                        <select id="settExportFormat" class="input">
+                            <option value="txt">Text (.txt)</option>
+                            <option value="md">Markdown (.md)</option>
+                            <option value="srt">Subtitles (.srt)</option>
+                            <option value="vtt">WebVTT (.vtt)</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>🔌 Connections</h3>
+                    <label class="setting">
+                        <span class="setting-label">Port</span>
+                        <span class="setting-hint">HTTP port Captain's Log listens on. Change requires restart.</span>
+                        <input type="number" id="settPort" class="input" min="1024" max="65535" placeholder="8090"
+                            readonly>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Whisper backend URL</span>
+                        <span class="setting-hint">The speech-to-text server that processes your audio. Default:
+                            faster-whisper-server on port 5000.</span>
+                        <input type="text" id="settWhisperURL" class="input" placeholder="http://127.0.0.1:5000">
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Enable TLS (HTTPS)</span>
+                        <span class="setting-hint">Auto-generates self-signed certificates for LAN access. CLI:
+                            --enable-tls or CAPTAINSLOG_ENABLE_TLS=true. Change requires restart.</span>
+                        <input type="checkbox" id="settEnableTLS" class="toggle">
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Enable Local LLM</span>
+                        <span class="setting-hint">Connect to a local AI model for post-processing —
+                            summarize, rewrite, extract action items. Requires Ollama or LM Studio.</span>
+                        <input type="checkbox" id="settEnableLLM" class="toggle">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Local LLM URL</span>
+                        <span class="setting-hint">Ollama: http://127.0.0.1:11434 &nbsp;|&nbsp; LM Studio:
+                            http://127.0.0.1:1234/v1</span>
+                        <input type="text" id="settLLMURL" class="input" placeholder="http://127.0.0.1:11434">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Local LLM Model</span>
+                        <span class="setting-hint">Which model to use — e.g. llama3.2, mistral, gemma2.</span>
+                        <div style="display: flex; gap: 8px;">
+                            <select id="settLLMModel" class="input" style="flex-grow: 1;">
+                                <option value="">Loading models…</option>
+                            </select>
+                            <button id="refreshLLMModels" class="btn-icon" aria-label="Refresh LLM models">↻</button>
+                        </div>
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>📊 Observability</h3>
+                    <label class="setting row">
+                        <span class="setting-label">Access logging</span>
+                        <span class="setting-hint">Log every HTTP request to stdout in JSON format. Useful for debugging
+                            or Grafana/Loki integration. Off by default.</span>
+                        <input type="checkbox" id="settAccessLog" class="toggle">
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="resetSettings">Reset</button>
+                <button class="btn-primary" id="saveSettings">Save preferences</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export As dialog -->
+    <div class="modal-overlay hidden" id="exportAsModal">
+        <div class="modal" style="max-width:340px;">
+            <h2>Export As…</h2>
+            <div class="export-format-list" role="menu" id="exportFormatList">
+                <button role="menuitem" class="export-format-btn" data-fmt="txt">
+                    <span class="export-fmt-icon">📄</span>
+                    <span><strong>Text</strong><br><small>.txt — plain text</small></span>
+                </button>
+                <button role="menuitem" class="export-format-btn" data-fmt="md">
+                    <span class="export-fmt-icon">📝</span>
+                    <span><strong>Markdown</strong><br><small>.md — with frontmatter</small></span>
+                </button>
+                <button role="menuitem" class="export-format-btn" data-fmt="srt">
+                    <span class="export-fmt-icon">🎬</span>
+                    <span><strong>Subtitles</strong><br><small>.srt — timed captions</small></span>
+                </button>
+                <button role="menuitem" class="export-format-btn" data-fmt="vtt">
+                    <span class="export-fmt-icon">🌐</span>
+                    <span><strong>WebVTT</strong><br><small>.vtt — web video captions</small></span>
+                </button>
+            </div>
+            <label class="export-set-default">
+                <input type="checkbox" id="exportSetDefault"> Set as default format
+            </label>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

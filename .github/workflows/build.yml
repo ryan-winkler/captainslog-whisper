@@ -1,0 +1,29 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Build
+        run: go build -o captainslog ./cmd/captainslog
+
+      - name: Test
+        run: go test ./...
+
+      - name: Verify binary
+        run: ./captainslog --help 2>&1 || true
+
+      - name: Check binary size
+        run: ls -lh captainslog

@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+# captainslog-cli — CLI interface for Captain's Log speech-to-text
+# Wraps the HTTP API for use by ZeroClaw, OpenClaw, scripts, and automation.
+# No external dependencies — pure bash + curl.
+#
+# Usage:
+#   captainslog-cli transcribe <file>         Transcribe audio/video file → stdout
+#   captainslog-cli save <text>               Save text to Obsidian vault
+#   captainslog-cli stardate                  Print current stardate
+#   captainslog-cli health                    Check backend status
+#   captainslog-cli settings                  Show current settings
+#   captainslog-cli settings <key> <value>    Update a setting
+#   captainslog-cli models                    List available Whisper/Ollama models
+#   captainslog-cli version                   Print version
+#
+# Environment:
+#   CAPTAINSLOG_URL   Base URL (default: http://127.0.0.1:8090)
+#   CAPTAINSLOG_TOKEN Auth token (optional)
+
+set -euo pipefail
+
+# Load settings from shared config file (same as web UI)
+CONFIG_DIR="${CAPTAINSLOG_CONFIG_DIR:-$HOME/.config/captainslog}"
+SETTINGS_FILE="$CONFIG_DIR/settings.json"
+
+# Helper: read a JSON string value from settings.json
+_setting() {
+    [[ -f "$SETTINGS_FILE" ]] || return 1
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$SETTINGS_FILE" 2>/dev/null | head -1
+}
+
+# Env vars override settings file, which overrides defaults
+BASE_URL="${CAPTAINSLOG_URL:-http://127.0.0.1:8090}"
+TOKEN="${CAPTAINSLOG_TOKEN:-}"
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+    transcribe|t)
+        file="${1:-}"
+        if [[ -z "$file" || ! -f "$file" ]]; then
+            echo "Usage: captainslog-cli transcribe <file>" >&2
+            exit 1
+        fi
+        format="${2:-text}"
+        lang="${CAPTAINSLOG_LANGUAGE:-}"
+
+        args=(-s -X POST "${BASE_URL}/v1/audio/transcriptions")
+        args+=(-F "file=@${file}")
+        args+=(-F "response_format=${format}")
+        [[ -n "$lang" ]] && args+=(-F "language=${lang}")
+        [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
+
+        result=$(curl "${args[@]}" 2>/dev/null)
+
+        if [[ "$format" == "text" ]]; then
+            # Try to extract "text" field from JSON, otherwise print raw
+            text=$(echo "$result" | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+            if [[ -n "$text" ]]; then
+                echo "$text"
+            else
+                echo "$result"
+            fi
+        else
+            echo "$result"
+        fi
+        ;;
+
+    copy|c)
+        # Copy text to system clipboard (Wayland/KDE + X11 compatible)
+        text="${*}"
+        if [[ -z "$text" ]]; then
+            text=$(cat)
+        fi
+        if [[ -z "$text" ]]; then
+            echo "Usage: captainslog-cli copy <text>" >&2
+            echo "  or:  captainslog-cli transcribe file.mp3 | captainslog-cli copy" >&2
+            exit 1
+        fi
+        if command -v wl-copy &>/dev/null; then
+            printf '%s' "$text" | wl-copy
+            echo "Copied to clipboard (wl-copy)"
+        elif command -v xclip &>/dev/null; then
+            printf '%s' "$text" | xclip -selection clipboard
+            echo "Copied to clipboard (xclip)"
+        elif command -v xsel &>/dev/null; then
+            printf '%s' "$text" | xsel --clipboard --input
+            echo "Copied to clipboard (xsel)"
+        elif command -v pbcopy &>/dev/null; then
+            printf '%s' "$text" | pbcopy
+            echo "Copied to clipboard (pbcopy)"
+        else
+            echo "No clipboard tool found. Install wl-clipboard (Wayland) or xclip (X11)." >&2
+            exit 1
+        fi
+        ;;
+
+    save|s)
+        text="${*}"
+        if [[ -z "$text" ]]; then
+            text=$(cat)
+        fi
+        if [[ -z "$text" ]]; then
+            echo "Usage: captainslog-cli save <text>" >&2
+            echo "  or:  echo 'text' | captainslog-cli save" >&2
+            exit 1
+        fi
+
+        lang="${CAPTAINSLOG_LANGUAGE:-en}"
+
+        # Escape JSON without Python: escape backslashes, double quotes, newlines, tabs
+        escaped=$(printf '%s' "$text" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e ':a' -e 'N' -e '$!ba' -e 's/\n/\\n/g' -e 's/\t/\\t/g')
+        payload="{\"text\":\"${escaped}\",\"language\":\"${lang}\"}"
+
+        args=(-s -X POST "${BASE_URL}/api/vault/save" -H "Content-Type: application/json" -d "$payload")
+        [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
+
+        curl "${args[@]}" 2>/dev/null
+        echo
+        ;;
+
+    stardate|sd)
+        data=$(curl -s "${BASE_URL}/api/stardate" 2>/dev/null)
+        if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
+            echo "$data"
+        else
+            # Extract "formatted" field without Python
+            formatted=$(echo "$data" | sed -n 's/.*"formatted"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+            if [[ -n "$formatted" ]]; then
+                echo "$formatted"
+            else
+                echo "$data"
+            fi
+        fi
+        ;;
+
+    health|h)
+        curl -s "${BASE_URL}/healthz" 2>/dev/null
+        echo
+        ;;
+
+    settings|config)
+        if [[ $# -eq 0 ]]; then
+            curl -s "${BASE_URL}/api/settings" 2>/dev/null
+            echo
+        elif [[ $# -eq 1 ]]; then
+            key="$1"
+            data=$(curl -s "${BASE_URL}/api/settings" 2>/dev/null)
+            # Extract key value with sed
+            value=$(echo "$data" | sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^,\"}\]*\)\"\{0,1\}.*/\1/p" 2>/dev/null)
+            echo "${value:-not found}"
+        else
+            key="$1"
+            value="$2"
+            if [[ "$value" == "true" || "$value" == "false" ]]; then
+                payload="{\"$key\": $value}"
+            else
+                payload="{\"$key\": \"$value\"}"
+            fi
+            args=(-s -X PUT "${BASE_URL}/api/settings" -H "Content-Type: application/json" -d "$payload")
+            [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
+            curl "${args[@]}" 2>/dev/null
+            echo
+        fi
+        ;;
+
+    models|m)
+        data=$(curl -s "${BASE_URL}/api/models" 2>/dev/null)
+        echo "Whisper models:"
+        echo "$data" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/  \1/p' | head -20 2>/dev/null || echo "  (could not parse)"
+        ;;
+
+    update)
+        # Self-update: pull latest, rebuild, install
+        REPO_DIR="${CAPTAINSLOG_REPO:-$HOME/code/captainslog-whisper}"
+        if [[ ! -d "$REPO_DIR/.git" ]]; then
+            echo "Error: repo not found at $REPO_DIR" >&2
+            echo "Set CAPTAINSLOG_REPO to the repo directory" >&2
+            exit 1
+        fi
+        if ! command -v go &>/dev/null; then
+            echo "Error: Go not installed (https://go.dev/dl/)" >&2
+            exit 1
+        fi
+        echo "Updating Captain's Log..."
+        (cd "$REPO_DIR" && git pull --ff-only 2>&1)
+        echo "Building..."
+        (cd "$REPO_DIR" && go build -o captainslog ./cmd/captainslog 2>&1)
+        cp "$REPO_DIR/captainslog" "${HOME}/.local/bin/captainslog" 2>/dev/null || \
+            echo "Note: copy to ~/.local/bin failed — manually copy $REPO_DIR/captainslog"
+        cp "$REPO_DIR/captainslog-cli" "${HOME}/.local/bin/captainslog-cli" 2>/dev/null || true
+        new_ver=$("$REPO_DIR/captainslog" --version 2>/dev/null || echo "unknown")
+        echo "Updated to $new_ver"
+        echo "Restart the service: systemctl --user restart captainslog"
+        ;;
+
+    diagnose|diag)
+        echo "🖖 Captain's Log Diagnostics"
+        echo "============================"
+        echo ""
+        # Check server
+        printf "Server (%s)... " "$BASE_URL"
+        if health=$(curl -sf "${BASE_URL}/healthz?diag" 2>/dev/null); then
+            echo "✅ reachable"
+            # Parse diagnostics
+            whisper_status=$(echo "$health" | sed -n 's/.*"whisper"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            printf "Whisper backend... "
+            if [[ "$whisper_status" == "connected" ]]; then
+                echo "✅ connected"
+            else
+                echo "❌ $whisper_status"
+                echo "  Fix: Ensure faster-whisper is running (docker/podman)"
+            fi
+            # Ollama
+            ollama_status=$(echo "$health" | sed -n 's/.*"ollama"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            printf "Ollama... "
+            if [[ "$ollama_status" == "enabled" ]]; then
+                echo "✅ enabled"
+            else
+                echo "ℹ️  disabled (set CAPTAINSLOG_ENABLE_OLLAMA=true)"
+            fi
+            # Vault
+            vault_status=$(echo "$health" | sed -n 's/.*"vault"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p')
+            printf "Vault... "
+            if [[ "$vault_status" == "true" ]]; then
+                echo "✅ configured"
+            else
+                echo "ℹ️  not configured (set vault_dir in Preferences)"
+            fi
+            # Version
+            ver=$(echo "$health" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            echo "Version: ${ver:-unknown}"
+        else
+            echo "❌ unreachable"
+            echo "  Fix: Start the service: systemctl --user start captainslog"
+            echo "  Or run directly: captainslog"
+        fi
+        echo ""
+        # Check local tools
+        printf "Clipboard tool... "
+        if command -v wl-copy &>/dev/null; then
+            echo "✅ wl-copy (Wayland)"
+        elif command -v xclip &>/dev/null; then
+            echo "✅ xclip (X11)"
+        else
+            echo "❌ not found"
+            echo "  Fix: sudo dnf install wl-clipboard (Wayland) or xclip (X11)"
+        fi
+        printf "Config dir... "
+        config_dir="${CAPTAINSLOG_CONFIG_DIR:-$HOME/.config/captainslog}"
+        if [[ -d "$config_dir" ]]; then
+            echo "✅ $config_dir"
+            if [[ -f "$config_dir/settings.json" ]]; then
+                echo "  Settings: $config_dir/settings.json (exists)"
+            else
+                echo "  Settings: not yet created (will be created on first save)"
+            fi
+        else
+            echo "⚠️  $config_dir (will be created on first run)"
+        fi
+        echo ""
+        echo "Run 'curl ${BASE_URL}/healthz?diag' for full server diagnostics"
+        ;;
+
+    version|--version|-v)
+        data=$(curl -s "${BASE_URL}/healthz" 2>/dev/null)
+        ver=$(echo "$data" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+        echo "captainslog-cli (server: ${ver:-unreachable})"
+        ;;
+
+    help|--help|-h|"")
+        cat <<'EOF'
+🖖 Captain's Log CLI — Local Speech-to-Text
+
+Usage:
+  captainslog-cli transcribe <file> [format]   Transcribe file (text|json|srt|vtt)
+  captainslog-cli copy <text>                  Copy to clipboard (wl-copy/xclip)
+  captainslog-cli save <text>                  Save to Obsidian vault
+  captainslog-cli stardate [-j]                Current stardate (--json for full)
+  captainslog-cli health                       Backend status
+  captainslog-cli diagnose                     Self-diagnose (check all services)
+  captainslog-cli settings [key] [value]       View/update settings
+  captainslog-cli models                       List available models
+  captainslog-cli update                       Pull latest + rebuild + install
+  captainslog-cli version                      Server version
+
+Examples:
+  captainslog-cli transcribe meeting.mp3
+  captainslog-cli save "Meeting notes from standup"
+  echo "dictated text" | captainslog-cli save
+  captainslog-cli settings language fr
+  captainslog-cli update
+
+Environment:
+  CAPTAINSLOG_URL      API base URL (default: http://127.0.0.1:8090)
+  CAPTAINSLOG_TOKEN    Auth token (if server requires auth)
+  CAPTAINSLOG_LANGUAGE Default language for transcription
+  CAPTAINSLOG_REPO     Repo path for update (default: ~/code/captainslog-whisper)
+
+No external dependencies — pure bash + curl.
+EOF
+        ;;
+
+    *)
+        echo "Unknown command: $cmd" >&2
+        echo "Run 'captainslog-cli help' for usage" >&2
+        exit 1
+        ;;
+esac
