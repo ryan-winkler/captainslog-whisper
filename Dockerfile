@@ -5,7 +5,7 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o captainslog ./cmd/captainslog
 
-FROM alpine:3.19
+FROM alpine:3.23
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /app/captainslog /usr/local/bin/
 EXPOSE 8090
