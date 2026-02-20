@@ -166,7 +166,6 @@
         el('settLanguage').value = settings.language || 'en';
         el('settVaultDir').value = settings.vault_dir || '';
         el('settDownloadDir').value = settings.download_dir || '';
-        el('settLanguage').value = settings.language || 'en';
         el('settModel').value = settings.model || 'large-v3';
         el('settAutoCopy').checked = settings.auto_copy !== false;
         el('settAutoSave').checked = !!settings.auto_save;
@@ -179,7 +178,7 @@
         el('settWhisperURL').value = settings.whisper_url || '';
         el('settLLMURL').value = settings.llm_url || '';
         el('settEnableLLM').checked = !!settings.enable_llm;
-        el('settAccessLog').checked = settings.access_log !== false;
+        el('settAccessLog').checked = !!settings.access_log;
         el('settTimeFormat').value = settings.time_format || 'system';
 
         // Show recordings dir (read-only)
@@ -1023,7 +1022,8 @@
             e.stopPropagation();
             const idx = parseInt(copyBtn.dataset.copy);
             if (logHistory[idx]) {
-                navigator.clipboard.writeText(logHistory[idx].text).then(() => {
+                const pureText = logHistory[idx].text.replace(/<[^>]*>/g, '').trim();
+                navigator.clipboard.writeText(pureText).then(() => {
                     copyBtn.style.color = 'var(--accent)';
                     setTimeout(() => copyBtn.style.color = '', 1000);
                 });
@@ -1362,7 +1362,8 @@
     // LLM button handler — proxied through backend to avoid CORS
     if (llmBtn) {
         llmBtn.addEventListener('click', () => {
-            if (!currentTranscription) return;
+            if (!currentTranscription) { flashButton(llmBtn, 'Nothing to send', 'error'); return; }
+            const savedTranscription = currentTranscription; // Preserve — AI response must not overwrite
             const model = settings.llm_model || 'llama3.2';
             const aiPrompt = 'Please review, correct errors, improve formatting, and respond:\n\n' + currentTranscription;
             flashButton(llmBtn, 'Sending…', '');
@@ -1374,15 +1375,20 @@
                 if (!r.ok) return r.json().then(e => { throw new Error(e.error || e.detail || 'LLM error'); });
                 return r.json();
             }).then(d => {
+                let aiText = '';
                 if (d.choices && d.choices.length > 0) {
-                    appendTranscription('\n\n🤖 AI:\n' + d.choices[0].message.content, false);
+                    aiText = d.choices[0].message.content;
                 } else if (d.response) {
-                    appendTranscription('\n\n🤖 AI:\n' + d.response, false);
+                    aiText = d.response;
+                }
+                if (aiText) {
+                    appendTranscription('\n\n🤖 AI:\n' + aiText, false);
+                    // Restore original — AI response should not become the copyable text
+                    currentTranscription = savedTranscription;
                 }
                 flashButton(llmBtn, 'Send to AI', '');
             }).catch(err => {
-                flashButton(llmBtn, 'Send to AI', '');
-                alert('LLM error: ' + err.message);
+                flashButton(llmBtn, err.message || 'LLM error', 'error');
             });
         });
         // Show/hide based on settings
@@ -1411,6 +1417,8 @@
         // Escape always works — close modals
         if (e.code === 'Escape') {
             settingsModal.classList.add('hidden');
+            if (exportAsModal) { exportAsModal.classList.add('hidden'); pendingExportData = null; }
+            closeAllOverflows();
             return;
         }
 
@@ -1445,7 +1453,10 @@
             case e.ctrlKey && e.key === 'c' && !!currentTranscription:
                 e.preventDefault();
                 e.stopPropagation();
-                navigator.clipboard.writeText(currentTranscription);
+                {
+                    const pureText = currentTranscription.replace(/<[^>]*>/g, '').trim();
+                    navigator.clipboard.writeText(pureText);
+                }
                 flashButton(copyBtn, 'Copied!', 'success');
                 break;
         }

@@ -71,6 +71,7 @@ type runtimeSettings struct {
 	HistoryLimit  int    `json:"history_limit"`
 	StreamURL     string `json:"stream_url"`
 	EnableTLS     bool   `json:"enable_tls"`
+	DefaultExportFormat string `json:"default_export_format"`
 }
 
 func main() {
@@ -529,6 +530,9 @@ func main() {
 			}
 			if update.HistoryLimit > 0 {
 				settings.HistoryLimit = update.HistoryLimit
+			}
+			if update.DefaultExportFormat != "" {
+				settings.DefaultExportFormat = update.DefaultExportFormat
 			}
 			settings.mu.Unlock()
 
