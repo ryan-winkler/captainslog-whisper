@@ -1145,29 +1145,52 @@
 
     // --- Actions ---
     copyBtn.addEventListener('click', () => {
-        if (!currentTranscription) return;
-        navigator.clipboard.writeText(currentTranscription)
+        if (!currentTranscription) { flashButton(copyBtn, 'Nothing to copy', 'error'); return; }
+        // Pure text only — strip any HTML tags defensively, no timestamps, no headers
+        const pureText = currentTranscription.replace(/<[^>]*>/g, '').trim();
+        navigator.clipboard.writeText(pureText)
             .then(() => flashButton(copyBtn, 'Copied!', 'success'))
-            .catch(err => console.error('Copy failed:', err));
+            .catch(err => { console.error('Copy failed:', err); flashButton(copyBtn, 'Copy failed', 'error'); });
     });
 
-    // --- Unified Export System ---
     function exportContent(text, segments, format) {
+        const pureText = (text || '').replace(/<[^>]*>/g, '').trim();
         switch (format) {
-            case 'srt': return generateSRT(segments, text);
-            case 'vtt': return 'WEBVTT\n\n' + generateVTT(segments, text);
+            case 'srt': return generateSRT(segments, pureText);
+            case 'vtt': return 'WEBVTT\n\n' + generateVTT(segments, pureText);
+            case 'json': {
+                const obj = {
+                    text: pureText,
+                    language: settings.language || 'en',
+                    timestamp: new Date().toISOString()
+                };
+                if (segments && segments.length > 0) {
+                    obj.segments = segments.map(s => ({
+                        start: s.start,
+                        end: s.end,
+                        text: (s.text || '').trim()
+                    }));
+                }
+                return JSON.stringify(obj, null, 2);
+            }
             case 'md': {
                 const now = new Date();
-                return `---\ntitle: ${settings.file_title || 'Dictation'}\ndate: ${now.toISOString()}\ntags: [dictation]\n---\n\n${text.trim()}\n`;
+                return `---\ntitle: ${settings.file_title || 'Dictation'}\ndate: ${now.toISOString()}\ntags: [dictation]\n---\n\n${pureText}\n`;
             }
-            default: return text;
+            default: return pureText;
         }
     }
 
     function doExport(text, segments, format, filenameBase) {
         const content = exportContent(text, segments, format);
         const ext = format;
-        const mime = format === 'vtt' ? 'text/vtt' : format === 'srt' ? 'application/x-subrip' : 'text/plain';
+        const mimeMap = {
+            'json': 'application/json',
+            'md': 'text/markdown',
+            'vtt': 'text/vtt',
+            'srt': 'application/x-subrip'
+        };
+        const mime = mimeMap[format] || 'text/plain';
         downloadTextFile(content, `${filenameBase || settings.file_title || 'Dictation'}_${Date.now()}.${ext}`, mime);
     }
 
@@ -1233,7 +1256,7 @@
     // Latest transcription Export button (default format)
     const exportBtn = document.getElementById('exportBtn');
     exportBtn.addEventListener('click', () => {
-        if (!currentTranscription) return;
+        if (!currentTranscription) { flashButton(exportBtn, 'Nothing to export', 'error'); return; }
         doExport(currentTranscription, currentSegments, getDefaultExportFormat());
     });
 
@@ -1241,7 +1264,7 @@
     const exportAsBtn = document.getElementById('exportAsBtn');
     if (exportAsBtn) {
         exportAsBtn.addEventListener('click', () => {
-            if (!currentTranscription) return;
+            if (!currentTranscription) { flashButton(exportAsBtn, 'No transcription', 'error'); return; }
             showExportAsDialog(currentTranscription, currentSegments);
         });
     }

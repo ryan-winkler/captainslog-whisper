@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -61,16 +63,13 @@ func (p *Proxy) Transcribe(w http.ResponseWriter, r *http.Request) {
 
 	backendURL := fmt.Sprintf("%s/v1/audio/transcriptions", p.backendURL)
 
-	// Check if this is a JSON request that should be enriched
+	// Determine if the requested format is JSON (the default) so we can enrich
+	// the response with SRT-parsed segments. We must properly parse the multipart
+	// form to read the response_format field — NOT substring match on raw binary.
 	isJSON := true // default format is json
-	if strings.Contains(string(bodyBytes), "response_format") {
-		// Quick check — if they explicitly asked for srt/vtt/text, don't enrich
-		for _, fmt := range []string{"srt", "vtt", "text"} {
-			if strings.Contains(string(bodyBytes), fmt) {
-				isJSON = false
-				break
-			}
-		}
+	requestedFormat := extractMultipartField(bodyBytes, contentType, "response_format")
+	if requestedFormat != "" && requestedFormat != "json" {
+		isJSON = false
 	}
 
 	// Make the primary request (whatever format the client asked for)
@@ -146,6 +145,40 @@ func (p *Proxy) Transcribe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write(enriched)
 	p.logger.Info("transcription proxied (enriched)", "status", resp.StatusCode)
+}
+
+// extractMultipartField reads a single form-field value from a buffered
+// multipart body. It properly parses the multipart stream so it never matches
+// on binary audio data. Returns "" if the field is not found or parsing fails.
+func extractMultipartField(body []byte, contentType, fieldName string) string {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return ""
+	}
+	boundary, ok := params["boundary"]
+	if !ok {
+		return ""
+	}
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	for {
+		part, err := reader.NextPart()
+		if err != nil {
+			break
+		}
+		name := part.FormName()
+		if name == "" || part.FileName() != "" {
+			// Skip file parts — don't read audio into memory
+			part.Close()
+			continue
+		}
+		if name == fieldName {
+			val, _ := io.ReadAll(io.LimitReader(part, 1024))
+			part.Close()
+			return strings.TrimSpace(string(val))
+		}
+		part.Close()
+	}
+	return ""
 }
 
 // replaceMIMEField replaces a multipart form field value in a raw body.
