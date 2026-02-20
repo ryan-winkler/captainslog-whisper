@@ -616,7 +616,10 @@
                     return line;
                 }).join('\n');
                 appendTranscription(formatted, true);
-                text = data.segments.map(s => s.text).join(' ');
+                text = data.segments.map(s => s.text).join(' ').trim();
+                // Override — appendTranscription sets currentTranscription from
+                // textContent which includes [00:00] timestamps. Copy must be pure text.
+                currentTranscription = text;
             } else if (text.trim()) {
                 currentSegments = [];
                 appendTranscription(text.trim(), false);
