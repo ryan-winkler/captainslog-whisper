@@ -1,0 +1,14 @@
+[Unit]
+Description=Captain's Log — Local Speech-to-Text
+After=network.target
+
+[Service]
+ExecStart=%h/code/captainslog-whisper/captainslog
+Environment=CAPTAINSLOG_WHISPER_URL=http://127.0.0.1:5000
+Environment=CAPTAINSLOG_VAULT_DIR=%h/Documents/Vault/Dictation
+Environment=CAPTAINSLOG_ENABLE_OLLAMA=true
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

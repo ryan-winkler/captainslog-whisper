@@ -1,0 +1,25 @@
+# Binaries
+/captainslog
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env
+
+# Secrets
+secrets/
+
+# TLS certs (auto-generated)
+*.pem
+*.key
+*.crt

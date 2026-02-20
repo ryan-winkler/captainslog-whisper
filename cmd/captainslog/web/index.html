@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captain's Log — Local Speech-to-Text</title>
+    <meta name="description"
+        content="Captain's log, supplemental. Private, local speech-to-text transcription powered by Whisper. No subspace transmissions.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖖</text></svg>">
+</head>
+
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">🖖</span>
+                <h1>Captain's Log</h1>
+                <span class="badge">LOCAL</span>
+            </div>
+            <div class="header-meta">
+                <span class="stardate-display" id="stardateDisplay" title="Current stardate"></span>
+            </div>
+            <div class="header-actions">
+                <div class="status-dot" id="backendStatus" title="Backend status"></div>
+                <select id="languageSelect" class="select" title="Language">
+                    <option value="en">English</option>
+                    <option value="und">Auto-detect</option>
+                    <option value="ga">Gaeilge</option>
+                    <option value="pt">Português</option>
+                    <option value="es">Español</option>
+                    <option value="fr">Français</option>
+                    <option value="de">Deutsch</option>
+                    <option value="it">Italiano</option>
+                    <option value="ja">日本語</option>
+                    <option value="zh">中文</option>
+                    <option value="ko">한국어</option>
+                </select>
+                <button class="icon-btn" id="settingsBtn" title="Preferences">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Record Section -->
+            <section class="record-section">
+                <div class="waveform-container" id="waveformContainer">
+                    <canvas id="waveform" width="600" height="80"></canvas>
+                </div>
+
+                <div class="controls">
+                    <button class="btn-record" id="recordBtn" title="Record (Space)">
+                        <svg id="micIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                            <line x1="12" y1="19" x2="12" y2="23" />
+                            <line x1="8" y1="23" x2="16" y2="23" />
+                        </svg>
+                        <svg id="stopIcon" class="hidden" viewBox="0 0 24 24" fill="currentColor">
+                            <rect x="6" y="6" width="12" height="12" rx="1" />
+                        </svg>
+                    </button>
+                    <span class="timer" id="timer">00:00</span>
+                </div>
+
+                <!-- Upload Zone -->
+                <div class="upload-zone" id="uploadZone">
+                    <input type="file" id="fileInput" accept="audio/*,video/*,.wav,.mp3,.mp4,.m4a,.ogg,.flac,.webm"
+                        hidden>
+                    <p>Drop audio/video file here or <button class="link-btn" id="browseBtn">browse</button></p>
+                    <span class="file-types">wav · mp3 · mp4 · m4a · ogg · flac · webm</span>
+                </div>
+            </section>
+
+            <!-- Transcription Section -->
+            <section class="transcription-section" id="transcriptionSection">
+                <div class="transcription-header">
+                    <h2>Ship's Log</h2>
+                    <div class="transcription-actions">
+                        <button class="action-btn" id="copyBtn" title="Copy to clipboard">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" />
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                            Copy
+                        </button>
+                        <button class="action-btn" id="saveBtn" title="Save to vault">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                <polyline points="17 21 17 13 7 13 7 21" />
+                                <polyline points="7 3 7 8 15 8" />
+                            </svg>
+                            Log it
+                        </button>
+                        <select class="select select-sm" id="downloadFormat">
+                            <option value="txt">.txt</option>
+                            <option value="srt">.srt</option>
+                            <option value="vtt">.vtt</option>
+                        </select>
+                        <button class="action-btn" id="downloadBtn" title="Download">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Download
+                        </button>
+                        <button class="action-btn danger" id="clearBtn" title="Clear">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path
+                                    d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="ai-actions" id="aiActions">
+                    <span class="ai-label">Send to →</span>
+                    <button class="ai-btn" id="sendOllama" title="Refine with local Ollama LLM">
+                        <span class="ai-icon">🦙</span> Ollama
+                    </button>
+                    <button class="ai-btn" id="sendZeroClaw" title="Send to ZeroClaw agent">
+                        <span class="ai-icon">🤖</span> ZeroClaw
+                    </button>
+                    <button class="ai-btn" id="sendGemini" title="Open in Google Gemini">
+                        <span class="ai-icon">✨</span> Gemini
+                    </button>
+                    <button class="ai-btn" id="sendClaude" title="Open in Claude">
+                        <span class="ai-icon">🧠</span> Claude
+                    </button>
+                    <button class="ai-btn" id="sendChatGPT" title="Open in ChatGPT">
+                        <span class="ai-icon">💬</span> ChatGPT
+                    </button>
+                </div>
+                <div class="transcription-body" id="transcriptionBody">
+                    <p class="placeholder" id="placeholder">Captain's log, supplemental. Awaiting voice input...</p>
+                    <div class="transcription-text" id="transcriptionText"></div>
+                </div>
+                <div class="processing" id="processing">
+                    <div class="spinner"></div>
+                    <span>Processing transmission...</span>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <div class="shortcuts">
+                <kbd>Space</kbd> Record · <kbd>Ctrl+C</kbd> Copy · <kbd>Ctrl+S</kbd> Log it · <kbd>,</kbd> Preferences
+            </div>
+            <span>All logs stored locally. No subspace transmissions.</span>
+            <a href="/healthz" target="_blank" class="footer-link">Status</a>
+        </footer>
+    </div>
+
+    <!-- Preferences Modal -->
+    <div class="modal-overlay hidden" id="settingsModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>⚙️ Preferences</h2>
+                <button class="icon-btn" id="closeSettings" title="Close">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="setting-group">
+                    <h3>📁 Storage</h3>
+                    <label class="setting">
+                        <span class="setting-label">Vault directory</span>
+                        <span class="setting-hint">Obsidian vault path for ship's logs</span>
+                        <input type="text" id="settVaultDir" class="input" placeholder="~/Documents/Vault/Dictation">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Download directory</span>
+                        <input type="text" id="settDownloadDir" class="input" placeholder="~/Downloads">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Date format</span>
+                        <span class="setting-hint">Go time format for file names (default: 2006-01-02)</span>
+                        <select id="settDateFormat" class="input">
+                            <option value="2006-01-02">2006-01-02 (ISO)</option>
+                            <option value="02-01-2006">02-01-2006 (EU)</option>
+                            <option value="01-02-2006">01-02-2006 (US)</option>
+                            <option value="2006-01-02-Monday">2006-01-02-Monday (with day)</option>
+                            <option value="January-02-2006">January-02-2006 (named)</option>
+                        </select>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">File title prefix</span>
+                        <span class="setting-hint">Title in vault markdown files (e.g. "Dictation", "Meeting
+                            Notes")</span>
+                        <input type="text" id="settFileTitle" class="input" placeholder="Dictation">
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>🎙️ Transcription</h3>
+                    <label class="setting">
+                        <span class="setting-label">Default language</span>
+                        <select id="settLanguage" class="input">
+                            <option value="en">English</option>
+                            <option value="und">Auto-detect</option>
+                            <option value="ga">Gaeilge</option>
+                            <option value="pt">Português</option>
+                            <option value="es">Español</option>
+                            <option value="fr">Français</option>
+                            <option value="de">Deutsch</option>
+                        </select>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Initial prompt</span>
+                        <span class="setting-hint">Guide the model — add names, jargon, or context</span>
+                        <input type="text" id="settPrompt" class="input"
+                            placeholder="Meeting about warp core calibration...">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Whisper model</span>
+                        <select id="settModel" class="input">
+                            <option value="large-v3">large-v3 (best accuracy)</option>
+                            <option value="medium">medium (balanced)</option>
+                            <option value="small">small (fast)</option>
+                            <option value="base">base (fastest)</option>
+                            <option value="tiny">tiny (instant)</option>
+                        </select>
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">VAD filter</span>
+                        <span class="setting-hint">Skip silence for faster processing</span>
+                        <input type="checkbox" id="settVAD" class="toggle">
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Speaker identification</span>
+                        <span class="setting-hint">Identify different speakers (requires whisperX backend)</span>
+                        <input type="checkbox" id="settDiarize" class="toggle">
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>⚡ Behaviour</h3>
+                    <label class="setting row">
+                        <span class="setting-label">Auto-copy to clipboard</span>
+                        <input type="checkbox" id="settAutoCopy" class="toggle" checked>
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Auto-save to vault</span>
+                        <input type="checkbox" id="settAutoSave" class="toggle">
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Show stardates</span>
+                        <span class="setting-hint">Display TNG-era stardates instead of normal time</span>
+                        <input type="checkbox" id="settStardates" class="toggle" checked>
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>🔌 Connections</h3>
+                    <label class="setting">
+                        <span class="setting-label">Whisper backend URL</span>
+                        <input type="text" id="settWhisperURL" class="input" placeholder="http://127.0.0.1:5000">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Ollama URL</span>
+                        <input type="text" id="settOllamaURL" class="input" placeholder="http://127.0.0.1:11434">
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="resetSettings">Reset</button>
+                <button class="btn-primary" id="saveSettings">Save preferences</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
