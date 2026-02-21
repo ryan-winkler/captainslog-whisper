@@ -127,19 +127,21 @@ Captain's Log doesn't need Whisper running on the same computer. If you have a m
 |---|---|
 | 🎙️ **Record & transcribe** | Click the mic, talk, get text |
 | 📁 **File upload** | Drag-and-drop audio or video files |
+| 🔗 **URL transcription** | Paste a YouTube or podcast URL — yt-dlp downloads and transcribes |
+| 📦 **Batch processing** | Drop multiple audio files — processed sequentially with progress |
 | 📋 **Copy to clipboard** | Transcribed text is automatically copied |
 | 💾 **Save to PKM** | Auto-save to [Obsidian](https://obsidian.md/), [Logseq](https://logseq.com/), or any folder |
-| 📦 **Batch processing** | Drop multiple audio files — processed sequentially with progress |
 | 🔍 **Search history** | Instantly filter past transcriptions by text |
 | 📌 **Pin entries** | Star important transcriptions to keep them at the top |
-| 🤖 **Send to AI** | Clean up your dictation with a local LLM (Ollama, LM Studio) — proxied through Captain's Log (no CORS) |
-| 📂 **Go to file** | Open audio, text, or settings folders directly from the UI |
-| ☑️ **Bulk actions** | Select multiple entries to copy or save at once |
-| 🎛️ **Audio sources** | Pick your mic, system audio, mixer, or OBS |
-| 📜 **Configurable history** | Set how many past transcriptions to show (default: 5) |
-| 📥 **Export** | One-click export using your default format, or **Export As…** to pick `.txt`, `.md`, `.srt`, or `.vtt` |
-| ⏱️ **Real timestamps** | SRT/VTT exports include accurate timestamps from the Whisper backend |
-| ⌨️ **Keyboard shortcuts** | Space to record, M to toggle mini mode, and more |
+| 🤖 **Send to AI** | Clean up your dictation with a local LLM (Ollama, LM Studio) — proxied through Captain's Log |
+| ✍️ **Subtitle editor** | Full segment editor: split, insert, delete, edit timecodes, CPS warnings, undo (Ctrl+Z) |
+| 🎵 **Follow-along highlight** | During playback, the active segment highlights and auto-scrolls |
+| ⏩ **Playback speed** | 0.5×–2× speed control in the subtitle editor |
+| 📝 **Notes** | Add per-entry notes — persisted to localStorage, shown via 📝 indicator |
+| 👥 **Speaker diarization** | Automatic speaker identification with 8 distinct auto-assigned colors |
+| 📂 **Folder watcher** | Watch a directory for new audio files — auto-transcribes and saves to vault |
+| 📥 **Export** | `.txt`, `.md`, `.srt`, `.vtt`, `.json` — from main UI or subtitle editor |
+| ⌨️ **Keyboard shortcuts** | Space, Ctrl+C, Ctrl+S, `,`, M, Esc, `?` — press `?` for full overlay |
 | 📱 **Mini mode** | Compact widget view — press `M` or add `?mini` to the URL |
 | 🔴 **Live streaming** | Real-time transcription via WebSocket (experimental) |
 | 🔒 **Private** | Everything stays on your machine |
@@ -157,6 +159,7 @@ Click ⚙️ in the top-right corner to open Preferences. Everything is saved au
 | **Save directory** | Where transcriptions are saved as markdown — works with Obsidian, Logseq, or any folder. Click 📂 to open. |
 | **Download directory** | Where exported files are downloaded. Click 📂 to open. |
 | **Recordings directory** | Where audio recordings are stored (read-only). Click 📂 to open. |
+| **Watch directory** | Monitor a folder for new audio files — auto-transcribes and saves to vault. Leave empty to disable. |
 | **Date format** | How dates appear in file names (ISO, EU, US, with day, named) |
 | **File title** | Prefix for saved markdown files (default: "Dictation") |
 
@@ -169,6 +172,8 @@ Click ⚙️ in the top-right corner to open Preferences. Everything is saved au
 | **Whisper model** | Model size — large-v3 (best), medium (balanced), small (fast), base, tiny |
 | **Skip silence (VAD)** | Automatically skip quiet parts to speed up processing |
 | **Speaker labels** | Tag who said what (requires WhisperX or diarization-capable backend) |
+
+> **URL Transcription:** Requires [yt-dlp](https://github.com/yt-dlp/yt-dlp) installed on the system. Paste a YouTube, podcast, or any supported URL in the input field.
 
 #### ⚡ Behaviour
 
