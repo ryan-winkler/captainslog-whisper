@@ -117,6 +117,11 @@
     let animationId = null;
     let currentTranscription = '';
     let currentSegments = [];
+    let currentRecordingUrl = null;
+
+    // Audio player for recording playback
+    const audioEl = document.createElement('audio');
+    audioEl.preload = 'metadata';
 
     // --- Transcription history (Clipy-inspired log archive) ---
     let logHistory = JSON.parse(localStorage.getItem('captainslog_history') || '[]');
@@ -678,9 +683,10 @@
                         const speakerClass = 'speaker-' + (seg.speaker % 4);
                         line += `<span class="speaker-label ${speakerClass}">SPEAKER ${seg.speaker + 1}</span>`;
                     }
-                    // Timestamp
+                    // Clickable timestamp — seeks audio on click
                     const start = formatTimestamp(seg.start);
-                    line += `<span class="log-stardate">[${start}]</span> `;
+                    const seekTime = typeof seg.start === 'number' ? seg.start.toFixed(2) : '0';
+                    line += `<a class="seg-timestamp" data-seek="${seekTime}" title="Click to play from ${start}">[${start}]</a> `;
                     line += escapeHTML(seg.text);
                     return line;
                 }).join('\n');
@@ -707,6 +713,10 @@
                     if (recRes.ok) {
                         const recData = await recRes.json();
                         recordingFile = recData.filename;
+                        // Enable audio playback for this recording
+                        currentRecordingUrl = '/api/recordings/' + recData.filename;
+                        audioEl.src = currentRecordingUrl;
+                        showAudioPlayer();
                     }
                 } catch (e) { console.warn('Recording save failed (non-critical):', e); }
 
@@ -752,6 +762,41 @@
         const s = Math.floor(seconds % 60);
         return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     }
+
+    // --- Audio playback with click-to-seek ---
+    function showAudioPlayer() {
+        // Remove existing player if any
+        const existing = document.getElementById('recording-player');
+        if (existing) existing.remove();
+
+        if (!currentRecordingUrl) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = 'recording-player';
+        wrapper.className = 'recording-player';
+        wrapper.innerHTML = `<span class="player-label">🔊 Recording</span>`;
+        audioEl.controls = true;
+        audioEl.className = 'player-audio';
+        wrapper.appendChild(audioEl);
+
+        // Insert after transcription text
+        const container = transcriptionText.parentElement;
+        if (container) container.appendChild(wrapper);
+    }
+
+    // Click-to-seek on segment timestamps
+    transcriptionText.addEventListener('click', (e) => {
+        const ts = e.target.closest('[data-seek]');
+        if (!ts) return;
+        e.preventDefault();
+        const seekTime = parseFloat(ts.dataset.seek);
+        if (isNaN(seekTime) || !audioEl.src) return;
+        audioEl.currentTime = seekTime;
+        audioEl.play().catch(() => { }); // autoplay might be blocked
+        // Highlight the clicked segment briefly
+        ts.classList.add('seeking');
+        setTimeout(() => ts.classList.remove('seeking'), 600);
+    });
 
     function appendTranscription(text, isHTML) {
         placeholder.classList.add('hidden');

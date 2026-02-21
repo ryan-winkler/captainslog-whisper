@@ -833,6 +833,52 @@ canvas {
     color: var(--text-muted);
 }
 
+/* Clickable segment timestamps */
+.seg-timestamp {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.2s, text-shadow 0.2s;
+    border-radius: 3px;
+    padding: 0 2px;
+}
+
+.seg-timestamp:hover {
+    color: var(--accent);
+    text-shadow: 0 0 6px var(--accent-glow);
+}
+
+.seg-timestamp.seeking {
+    color: var(--accent-gold);
+    text-shadow: 0 0 8px rgba(250, 200, 99, 0.4);
+}
+
+/* Recording audio player */
+.recording-player {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 8px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.player-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.player-audio {
+    flex: 1;
+    height: 32px;
+    min-width: 0;
+}
+
 /* Processing spinner */
 .processing {
     display: none;
