@@ -153,7 +153,7 @@
                     <button class="action-btn" id="exportAsBtn" title="Export as specific format">
                         Export As…
                     </button>
-                    <button class="action-btn" id="llmBtn" title="Send to Local LLM" style="display:none;">
+                    <button class="action-btn" id="llmBtn" title="Send to Local LLM">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path
                                 d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2V6a4 4 0 0 1 4-4z" />
@@ -205,7 +205,10 @@
             <!-- Recent history -->
             <section class="history-section" id="historySection" aria-label="Recent transcriptions">
                 <div class="history-header">
-                    <h3>Recent <span class="history-count" id="historyCount"></span></h3>
+                    <h3>Recent</h3>
+                    <button class="history-folder-btn" id="historyFolderBtn"
+                        title="Open transcription folder">📂</button>
+                    <span style="flex:1;"></span>
                     <button class="history-select-btn" id="historySelectBtn" title="Select entries">Select</button>
                 </div>
                 <input type="search" class="history-search" id="historySearch" placeholder="Search transcriptions…"
@@ -553,6 +556,10 @@
                 <button role="menuitem" class="export-format-btn" data-fmt="vtt">
                     <span class="export-fmt-icon">🌐</span>
                     <span><strong>WebVTT</strong><br><small>.vtt — web video captions</small></span>
+                </button>
+                <button role="menuitem" class="export-format-btn" data-fmt="lrc">
+                    <span class="export-fmt-icon">🎵</span>
+                    <span><strong>Lyrics</strong><br><small>.lrc — timed lyrics / karaoke</small></span>
                 </button>
             </div>
             <label class="export-set-default">

@@ -250,7 +250,7 @@
         settings.access_log = el('settAccessLog').checked;
 
         // Show/hide LLM button
-        if (llmBtn) llmBtn.style.display = settings.enable_llm ? '' : 'none';
+        // LLM button stays visible always — guides user to Settings if not configured
         settings.time_format = el('settTimeFormat').value;
         settings.history_limit = parseInt(el('settHistoryLimit').value) || 5;
         settings.enable_tls = el('settEnableTLS').checked;
@@ -880,7 +880,7 @@
 
     // --- Transcription history (selectable log entries) ---
     const historyList = document.getElementById('historyList');
-    const historyCount = document.getElementById('historyCount');
+    const historyFolderBtn = document.getElementById('historyFolderBtn');
     const historySelectBtn = document.getElementById('historySelectBtn');
     const historyBulkBar = document.getElementById('historyBulkBar');
     const bulkSelectAll = document.getElementById('bulkSelectAll');
@@ -938,7 +938,8 @@
         const shownCount = searchPinned.length + searchRecent.length;
         let countText = query ? `(${shownCount} matching)` :
             limit > 0 && total > limit ? `(${limitedUnpinned.length} of ${unpinned.length})` : `(${unpinned.length})`;
-        historyCount.textContent = countText;
+        historyFolderBtn.title = query ? `${shownCount} matching` :
+            limit > 0 && total > limit ? `${limitedUnpinned.length} of ${unpinned.length} transcriptions` : `${unpinned.length} transcriptions`;
 
         // Pinned section (its own island)
         if (pinnedSection && pinnedList) {
@@ -1515,6 +1516,7 @@
         switch (format) {
             case 'srt': return generateSRT(segments, pureText);
             case 'vtt': return 'WEBVTT\n\n' + generateVTT(segments, pureText);
+            case 'lrc': return generateLRC(segments, pureText);
             case 'json': {
                 const obj = {
                     text: pureText,
@@ -1547,7 +1549,8 @@
             'json': 'application/json',
             'md': 'text/markdown',
             'vtt': 'text/vtt',
-            'srt': 'application/x-subrip'
+            'srt': 'application/x-subrip',
+            'lrc': 'application/x-lrc'
         };
         const mime = mimeMap[format] || 'text/plain';
         downloadTextFile(content, `${filenameBase || settings.file_title || 'Dictation'}_${Date.now()}.${ext}`, mime);
@@ -1571,7 +1574,7 @@
         const buttons = exportFormatList.querySelectorAll('[data-fmt]');
         buttons.forEach(btn => {
             const fmt = btn.dataset.fmt;
-            if (fmt === 'srt' || fmt === 'vtt') {
+            if (fmt === 'srt' || fmt === 'vtt' || fmt === 'lrc') {
                 btn.disabled = isPure;
                 btn.title = isPure ? 'Subtitle formats require Rich export mode (timestamps)' : '';
                 btn.style.opacity = isPure ? '0.4' : '';
@@ -1663,6 +1666,21 @@
             const text = wrapSubtitleText((s.text || '').trim() || '...');
             return `${i + 1}\n${start} --> ${end}\n${text}`;
         }).join('\n\n') + '\n';
+    }
+
+    // LRC (Lyrics) format — [mm:ss.xx] text
+    // Used by karaoke apps, music players, podcast chapter lists
+    function generateLRC(segments, fallbackText) {
+        if (!segments || segments.length === 0) {
+            return '[00:00.00] ' + (fallbackText || '').trim() + '\n';
+        }
+        return segments.map(s => {
+            const t = Math.max(0, s.start || 0);
+            const mm = String(Math.floor(t / 60)).padStart(2, '0');
+            const ss = String(Math.floor(t % 60)).padStart(2, '0');
+            const cs = String(Math.round((t % 1) * 100)).padStart(2, '0');
+            return `[${mm}:${ss}.${cs}] ${(s.text || '').trim()}`;
+        }).join('\n') + '\n';
     }
 
     // Wrap subtitle text to ≤42 chars/line, max 2 lines per cue
@@ -1763,22 +1781,63 @@
     });
 
 
+    // 📂 folder button — opens save directory
+    if (historyFolderBtn) {
+        historyFolderBtn.addEventListener('click', () => {
+            const saveDir = settings.save_dir;
+            if (!saveDir) {
+                showToast('No save directory set — configure in Settings → Storage');
+                return;
+            }
+            fetch('/api/open', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: saveDir })
+            }).then(r => {
+                if (!r.ok) {
+                    navigator.clipboard.writeText(saveDir);
+                    showToast('Path copied: ' + saveDir);
+                }
+            }).catch(() => {
+                navigator.clipboard.writeText(saveDir);
+                showToast('Path copied: ' + saveDir);
+            });
+        });
+    }
+
     // LLM button handler — proxied through backend to avoid CORS
     if (llmBtn) {
-        llmBtn.addEventListener('click', () => {
+        llmBtn.addEventListener('click', async () => {
             if (!currentTranscription) { flashButton(llmBtn, 'Nothing to send', 'error'); return; }
+            if (!settings.enable_llm) {
+                flashButton(llmBtn, 'Enable in Settings → Connections', 'error');
+                return;
+            }
             const savedTranscription = currentTranscription; // Preserve — AI response must not overwrite
             const model = settings.llm_model || 'llama3.2';
             const aiPrompt = 'Please review, correct errors, improve formatting, and respond:\n\n' + currentTranscription;
-            flashButton(llmBtn, 'Sending…', '');
-            fetch('/api/llm/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ model, messages: [{ role: 'user', content: aiPrompt }], stream: false })
-            }).then(r => {
-                if (!r.ok) return r.json().then(e => { throw new Error(e.error || e.detail || 'LLM error'); });
-                return r.json();
-            }).then(d => {
+
+            // AbortController with 30s timeout — prevents indefinite hang
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 30000);
+
+            try {
+                flashButton(llmBtn, 'Connecting…', '');
+                const res = await fetch('/api/llm/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model, messages: [{ role: 'user', content: aiPrompt }], stream: false }),
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || err.detail || `LLM returned ${res.status}`);
+                }
+
+                flashButton(llmBtn, 'Thinking…', '');
+                const d = await res.json();
                 let aiText = '';
                 if (d.choices && d.choices.length > 0) {
                     aiText = d.choices[0].message.content;
@@ -1790,13 +1849,24 @@
                     // Restore original — AI response should not become the copyable text
                     currentTranscription = savedTranscription;
                 }
-                flashButton(llmBtn, 'Send to AI', '');
-            }).catch(err => {
-                flashButton(llmBtn, err.message || 'LLM error', 'error');
-            });
+                flashButton(llmBtn, '✅ Done', 'success');
+                setTimeout(() => flashButton(llmBtn, 'Send to AI', ''), 2000);
+            } catch (err) {
+                clearTimeout(timeout);
+                let msg = err.message || 'Unknown error';
+                if (err.name === 'AbortError') {
+                    msg = 'Timed out — is Ollama/LM Studio running?';
+                } else if (msg.includes('503') || msg.includes('not enabled')) {
+                    msg = 'Not configured — enable in Settings → Connections';
+                } else if (msg.includes('502') || msg.includes('unreachable')) {
+                    msg = 'Can\'t reach LLM — check URL in Settings';
+                }
+                flashButton(llmBtn, msg, 'error');
+                setTimeout(() => flashButton(llmBtn, 'Send to AI', ''), 4000);
+            }
         });
         // Show/hide based on settings
-        llmBtn.style.display = settings.enable_llm ? '' : 'none';
+        llmBtn.style.display = '';  // Always visible — guides to Settings if not configured
     }
 
     // --- Keyboard shortcuts ---
