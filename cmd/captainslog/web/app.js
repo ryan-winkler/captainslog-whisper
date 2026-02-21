@@ -683,7 +683,7 @@
                     let line = '';
                     // Speaker diarization label
                     if (seg.speaker !== undefined && seg.speaker !== null) {
-                        const speakerClass = 'speaker-' + (seg.speaker % 4);
+                        const speakerClass = 'speaker-' + (seg.speaker % 8);
                         line += `<span class="speaker-label ${speakerClass}">SPEAKER ${seg.speaker + 1}</span>`;
                     }
                     // Clickable timestamp — seeks audio on click

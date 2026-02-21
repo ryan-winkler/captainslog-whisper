@@ -826,6 +826,26 @@ canvas {
     color: var(--accent-gold);
 }
 
+.speaker-4 {
+    background: rgba(180, 120, 200, 0.2);
+    color: #b478c8;
+}
+
+.speaker-5 {
+    background: rgba(220, 140, 100, 0.2);
+    color: #dc8c64;
+}
+
+.speaker-6 {
+    background: rgba(130, 190, 130, 0.2);
+    color: #82be82;
+}
+
+.speaker-7 {
+    background: rgba(200, 150, 160, 0.2);
+    color: #c896a0;
+}
+
 /* Stardate timestamp */
 .log-stardate {
     font-family: var(--mono);
