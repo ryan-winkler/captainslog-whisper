@@ -1,16 +1,37 @@
 // Package vault — history scanning.
 // Reads saved transcription files from the vault directory and returns
 // structured entries for the frontend history list.
+//
+// Design constraints:
+//   - Memory bounded: body text capped at maxBodyRunes, scanner limited to 256KB/line
+//   - Error surfacing: parse errors logged (not silently dropped)
+//   - Performance: sort AFTER filtering, file stat batched with parse
 package vault
 
 import (
 	"bufio"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+)
+
+const (
+	// maxBodyRunes caps body text per entry to prevent oversized responses.
+	// Matches the localStorage entry cap in the frontend.
+	maxBodyRunes = 500
+
+	// maxScannerBytes limits bufio.Scanner line buffer to prevent OOM on
+	// binary files or extremely long lines accidentally placed in the vault.
+	maxScannerBytes = 256 * 1024 // 256KB
+
+	// maxBodyLines stops reading body lines after this count.
+	// A 200-line transcription at ~80 chars/line ≈ 16KB — more than enough
+	// for the 500-rune preview. Early exit saves memory on large files.
+	maxBodyLines = 200
 )
 
 // Entry represents a single transcription file from the vault directory.
@@ -31,32 +52,60 @@ type Entry struct {
 	Title string `json:"title,omitempty"`
 }
 
+// ExpandDir resolves ~/ to the user's home directory and returns the
+// absolute path. Exported so callers (main.go) don't duplicate this logic.
+func ExpandDir(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	if strings.HasPrefix(dir, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			dir = filepath.Join(home, dir[2:])
+		}
+	}
+	if abs, err := filepath.Abs(dir); err == nil {
+		return abs
+	}
+	return dir
+}
+
 // Scan reads all .md files in dir, parses YAML frontmatter, and returns
 // entries sorted by date (newest first). Returns at most maxEntries results.
-// If dir is empty or doesn't exist, returns nil without error.
-func Scan(dir string, maxEntries int) ([]Entry, error) {
+//
+// Parse errors for individual files are logged and counted — never silently
+// dropped. If dir is empty or doesn't exist, returns nil without error.
+func Scan(dir string, maxEntries int, logger *slog.Logger) ([]Entry, error) {
 	if dir == "" {
 		return nil, nil
 	}
 
-	// Expand ~/
-	if strings.HasPrefix(dir, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			dir = filepath.Join(home, dir[2:])
-		}
+	dir = ExpandDir(dir)
+
+	// Verify directory exists before globbing — fail fast with clear error
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("vault dir stat: %w", err)
 	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("vault path is not a directory: %s", dir)
+	}
+
+	start := time.Now()
 
 	matches, err := filepath.Glob(filepath.Join(dir, "*.md"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("glob vault dir: %w", err)
 	}
 
-	entries := make([]Entry, 0, len(matches))
+	entries := make([]Entry, 0, min(len(matches), maxEntries))
+	var parseErrors int
+
 	for _, path := range matches {
 		entry, err := parseVaultFile(path)
 		if err != nil {
-			continue // Skip unparseable files
+			parseErrors++
+			logger.Debug("skipping vault file", "path", filepath.Base(path), "error", err)
+			continue
 		}
 		entries = append(entries, entry)
 	}
@@ -69,6 +118,14 @@ func Scan(dir string, maxEntries int) ([]Entry, error) {
 	if maxEntries > 0 && len(entries) > maxEntries {
 		entries = entries[:maxEntries]
 	}
+
+	logger.Info("vault scan complete",
+		"dir", dir,
+		"files_found", len(matches),
+		"entries_parsed", len(entries),
+		"parse_errors", parseErrors,
+		"duration_ms", time.Since(start).Milliseconds(),
+	)
 
 	return entries, nil
 }
@@ -84,19 +141,25 @@ func Scan(dir string, maxEntries int) ([]Entry, error) {
 //	---
 //
 //	Transcription text here.
+//
+// Memory bounded: stops reading body after maxBodyLines and caps text at
+// maxBodyRunes. Scanner buffer limited to maxScannerBytes.
 func parseVaultFile(path string) (Entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return Entry{}, err
+		return Entry{}, fmt.Errorf("open: %w", err)
 	}
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 4096), maxScannerBytes)
+
 	entry := Entry{File: path}
 
 	// State machine: 0=before frontmatter, 1=in frontmatter, 2=body
 	state := 0
-	var bodyLines []string
+	var bodyBuilder strings.Builder
+	bodyLineCount := 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -111,42 +174,37 @@ func parseVaultFile(path string) (Entry, error) {
 				state = 2
 				continue
 			}
-			// Parse simple YAML key: value
-			if idx := strings.Index(line, ":"); idx > 0 {
-				key := strings.TrimSpace(line[:idx])
-				val := strings.TrimSpace(line[idx+1:])
-				switch key {
-				case "title":
-					entry.Title = val
-				case "date":
-					entry.Timestamp = val
-				case "language":
-					entry.Language = val
-				}
-			}
+			parseFrontmatterLine(line, &entry)
 		case 2:
-			bodyLines = append(bodyLines, line)
+			bodyLineCount++
+			if bodyLineCount > maxBodyLines {
+				// Early exit — we have more than enough for a preview
+				goto done
+			}
+			bodyBuilder.WriteString(line)
+			bodyBuilder.WriteByte('\n')
 		}
 	}
 
+done:
 	if err := scanner.Err(); err != nil {
-		return Entry{}, err
+		return Entry{}, fmt.Errorf("scan: %w", err)
 	}
 
 	// Extract body text — strip markdown formatting for clean preview
-	body := cleanMarkdown(strings.Join(bodyLines, "\n"))
+	body := cleanMarkdown(bodyBuilder.String())
 
 	// Skip empty files
 	if body == "" {
-		return Entry{}, fmt.Errorf("empty body")
+		return Entry{}, fmt.Errorf("empty body in %s", filepath.Base(path))
 	}
 
-	// Cap text at 500 runes to match localStorage entries.
+	// Cap text at maxBodyRunes.
 	// WHY runes not bytes? Byte slicing at position 500 can split a multi-byte
 	// UTF-8 character (emoji, CJK), producing invalid UTF-8 in the response.
 	runes := []rune(body)
-	if len(runes) > 500 {
-		body = string(runes[:500])
+	if len(runes) > maxBodyRunes {
+		body = string(runes[:maxBodyRunes])
 	}
 	entry.Text = body
 
@@ -157,19 +215,37 @@ func parseVaultFile(path string) (Entry, error) {
 		}
 	}
 
-	// Normalize timestamp to RFC3339 if it's just a date or datetime
+	// Normalize timestamp to RFC3339
 	entry.Timestamp = normalizeTimestamp(entry.Timestamp)
 
 	return entry, nil
 }
 
+// parseFrontmatterLine extracts a key: value pair from a YAML frontmatter line.
+func parseFrontmatterLine(line string, entry *Entry) {
+	idx := strings.Index(line, ":")
+	if idx <= 0 {
+		return
+	}
+	key := strings.TrimSpace(line[:idx])
+	val := strings.TrimSpace(line[idx+1:])
+	switch key {
+	case "title":
+		entry.Title = val
+	case "date":
+		entry.Timestamp = val
+	case "language":
+		entry.Language = val
+	}
+}
+
 // cleanMarkdown strips markdown formatting for clean history preview text.
 // Removes headers (#), horizontal rules (---), blockquotes (>), and collapses whitespace.
 func cleanMarkdown(text string) string {
-	var lines []string
+	var b strings.Builder
 	for _, line := range strings.Split(text, "\n") {
 		trimmed := strings.TrimSpace(line)
-		// Skip empty lines, horizontal rules, and markdown headers
+		// Skip empty lines and horizontal rules
 		if trimmed == "" || trimmed == "---" {
 			continue
 		}
@@ -182,33 +258,39 @@ func cleanMarkdown(text string) string {
 			}
 		}
 		// Strip blockquote prefixes
-		if strings.HasPrefix(trimmed, "> ") {
-			trimmed = strings.TrimPrefix(trimmed, "> ")
-		}
-		// Skip emoji-only lines (single emoji that isn't useful as preview text).
-		// WHY len <= 2? Single ASCII chars like 'OK' or 'No' are valid content;
-		// only skip lines that are effectively empty (single emoji = 3-4 bytes
-		// but we check rune count to be safe).
+		trimmed = strings.TrimPrefix(trimmed, "> ")
+		// Skip single-rune lines (e.g. stray emoji)
 		if len([]rune(trimmed)) <= 1 {
 			continue
 		}
-		lines = append(lines, trimmed)
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(trimmed)
 	}
-	return strings.TrimSpace(strings.Join(lines, " "))
+	return strings.TrimSpace(b.String())
 }
 
-// normalizeTimestamp converts various date formats to ISO-8601.
+// normalizeTimestamp converts various date formats to RFC3339.
 func normalizeTimestamp(ts string) string {
-	formats := []string{
+	layouts := []string{
 		time.RFC3339,
 		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
 		"2006-01-02",
 	}
-	for _, layout := range formats {
+	for _, layout := range layouts {
 		if t, err := time.Parse(layout, ts); err == nil {
 			return t.Format(time.RFC3339)
 		}
 	}
 	return ts // Return as-is if unparseable
+}
+
+// min returns the smaller of a and b.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

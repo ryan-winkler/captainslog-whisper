@@ -605,16 +605,20 @@ func main() {
 			return
 		}
 
-		entries, err := vault.Scan(dir, 200)
+		entries, err := vault.Scan(dir, 200, logger)
 		if err != nil {
-			logger.Warn("vault scan failed", "dir", dir, "error", err)
-			// Graceful degradation — return empty array on error
+			// Log with full context — never silent
+			logger.Warn("vault history scan failed", "dir", dir, "error", err)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte("[]"))
 			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		if entries == nil {
+			w.Write([]byte("[]"))
+			return
+		}
 		json.NewEncoder(w).Encode(entries)
 	}))
 	// --- Stardate API ---
