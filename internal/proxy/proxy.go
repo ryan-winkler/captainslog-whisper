@@ -68,7 +68,7 @@ func (p *Proxy) Transcribe(w http.ResponseWriter, r *http.Request) {
 	// form to read the response_format field — NOT substring match on raw binary.
 	isJSON := true // default format is json
 	requestedFormat := extractMultipartField(bodyBytes, contentType, "response_format")
-	if requestedFormat != "" && requestedFormat != "json" {
+	if requestedFormat != "" && requestedFormat != "json" && requestedFormat != "verbose_json" {
 		isJSON = false
 	}
 
@@ -119,24 +119,29 @@ func (p *Proxy) Transcribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Now make a parallel SRT request to get segments with timestamps
-	srtBody := replaceMIMEField(bodyBytes, contentType, "response_format", "srt")
-	srtReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, backendURL, bytes.NewReader(srtBody))
-	if err == nil {
-		srtReq.Header.Set("Content-Type", contentType)
-		srtReq.ContentLength = int64(len(srtBody))
-		srtResp, srtErr := p.client.Do(srtReq)
-		if srtErr == nil && srtResp.StatusCode == http.StatusOK {
-			srtData, _ := io.ReadAll(srtResp.Body)
-			srtResp.Body.Close()
-			segments := parseSRT(string(srtData))
-			if len(segments) > 0 {
-				jsonResp["segments"] = segments
-				p.logger.Info("enriched JSON with SRT segments", "count", len(segments))
+	// Only enrich with SRT segments if the response doesn't already contain them
+	// (verbose_json includes segments natively; plain json does not)
+	if _, hasSegments := jsonResp["segments"]; !hasSegments {
+		srtBody := replaceMIMEField(bodyBytes, contentType, "response_format", "srt")
+		srtReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, backendURL, bytes.NewReader(srtBody))
+		if err == nil {
+			srtReq.Header.Set("Content-Type", contentType)
+			srtReq.ContentLength = int64(len(srtBody))
+			srtResp, srtErr := p.client.Do(srtReq)
+			if srtErr == nil && srtResp.StatusCode == http.StatusOK {
+				srtData, _ := io.ReadAll(srtResp.Body)
+				srtResp.Body.Close()
+				segments := parseSRT(string(srtData))
+				if len(segments) > 0 {
+					jsonResp["segments"] = segments
+					p.logger.Info("enriched JSON with SRT segments", "count", len(segments))
+				}
+			} else if srtResp != nil {
+				srtResp.Body.Close()
 			}
-		} else if srtResp != nil {
-			srtResp.Body.Close()
 		}
+	} else {
+		p.logger.Info("response already contains segments (verbose_json)")
 	}
 
 	// Return the enriched JSON response

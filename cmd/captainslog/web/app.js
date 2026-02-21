@@ -613,7 +613,7 @@
         showProcessing(true, processingMsg);
         const formData = new FormData();
         formData.append('file', audioBlob, 'recording.webm');
-        formData.append('response_format', 'json');
+        formData.append('response_format', 'verbose_json');
         const lang = settings.language || 'en';
         if (lang && lang !== 'und') formData.append('language', lang);
         if (settings.prompt) formData.append('prompt', settings.prompt);
@@ -826,6 +826,14 @@
             recording: recordingFile || null,
             vault_file: vaultFile || null
         };
+        // Store segments for SRT/VTT export (compact: only start/end/text)
+        if (currentSegments && currentSegments.length > 0) {
+            entry.segments = currentSegments.slice(0, 200).map(s => ({
+                start: s.start,
+                end: s.end,
+                text: (s.text || '').trim()
+            }));
+        }
         if (settings.show_stardates !== false) {
             entry.stardate = stardateDisplay.textContent.replace('Stardate ', '');
         }
