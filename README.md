@@ -655,6 +655,7 @@ Captain's Log uses standard APIs (OpenAI-compatible `/v1/audio/transcriptions`) 
 | Backend | Best For | Setup |
 |---|---|---|
 | [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | **AMD GPU (ROCm)**, low-memory, C++ | Build with `-DGGML_HIPBLAS=1`, run `whisper-server` |
+| [CrisperWhisper](https://github.com/nyrahealth/CrisperWhisper) | **Precise word-level timestamps**, filler detection, #1 OpenASR | `nyrahealth/faster_CrisperWhisper` model with faster-whisper |
 | [faster-whisper-server](https://github.com/fedirz/faster-whisper-server) | NVIDIA GPU, fast inference | `pip install faster-whisper-server && uvicorn ...` |
 | [whisper-fastapi](https://github.com/heimoshuiyu/whisper-fastapi) | Home Assistant / webhook integration | Docker: `ghcr.io/heimoshuiyu/whisper-fastapi` |
 | [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) | Library for custom backends | Python library — build your own API around it |

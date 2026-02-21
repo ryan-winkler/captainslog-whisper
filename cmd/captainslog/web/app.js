@@ -1526,26 +1526,47 @@
 
     function generateSRT(segments, fallbackText) {
         if (!segments || segments.length === 0) {
-            return '1\n00:00:00,000 --> 00:00:10,000\n' + fallbackText + '\n';
+            return '1\n00:00:00,000 --> 00:00:10,000\n' + wrapSubtitleText(fallbackText) + '\n';
         }
         return segments.map((s, i) => {
             const start = formatSrtTime(s.start);
             const end = formatSrtTime(s.end);
-            const text = (s.text || '').trim() || '...';
+            const text = wrapSubtitleText((s.text || '').trim() || '...');
             return `${i + 1}\n${start} --> ${end}\n${text}`;
         }).join('\n\n') + '\n';
     }
 
     function generateVTT(segments, fallbackText) {
         if (!segments || segments.length === 0) {
-            return '1\n00:00:00.000 --> 00:00:10.000\n' + fallbackText + '\n';
+            return '1\n00:00:00.000 --> 00:00:10.000\n' + wrapSubtitleText(fallbackText) + '\n';
         }
         return segments.map((s, i) => {
             const start = formatVttTime(s.start);
             const end = formatVttTime(s.end);
-            const text = (s.text || '').trim() || '...';
+            const text = wrapSubtitleText((s.text || '').trim() || '...');
             return `${i + 1}\n${start} --> ${end}\n${text}`;
         }).join('\n\n') + '\n';
+    }
+
+    // Wrap subtitle text to ≤42 chars/line, max 2 lines per cue
+    // (YouTube/Vimeo broadcast standard for readability)
+    function wrapSubtitleText(text, maxChars = 42, maxLines = 2) {
+        if (!text || text.length <= maxChars) return text;
+        const words = text.split(/\s+/);
+        const lines = [];
+        let current = '';
+        for (const word of words) {
+            const candidate = current ? current + ' ' + word : word;
+            if (candidate.length > maxChars && current) {
+                lines.push(current);
+                current = word;
+                if (lines.length >= maxLines) break;
+            } else {
+                current = candidate;
+            }
+        }
+        if (current && lines.length < maxLines) lines.push(current);
+        return lines.join('\n');
     }
 
     function formatSrtTime(seconds) {
