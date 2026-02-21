@@ -95,7 +95,10 @@ func GenerateOrLoad(certDir string, hostnames []string, logger *slog.Logger) (*t
 	if err != nil {
 		return nil, fmt.Errorf("write cert: %w", err)
 	}
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if err := pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER}); err != nil {
+		certOut.Close()
+		return nil, fmt.Errorf("encode cert PEM: %w", err)
+	}
 	certOut.Close()
 
 	// Write key
@@ -103,8 +106,15 @@ func GenerateOrLoad(certDir string, hostnames []string, logger *slog.Logger) (*t
 	if err != nil {
 		return nil, fmt.Errorf("write key: %w", err)
 	}
-	keyBytes, _ := x509.MarshalECPrivateKey(privateKey)
-	pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes})
+	keyBytes, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		keyOut.Close()
+		return nil, fmt.Errorf("marshal EC private key: %w", err)
+	}
+	if err := pem.Encode(keyOut, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes}); err != nil {
+		keyOut.Close()
+		return nil, fmt.Errorf("encode key PEM: %w", err)
+	}
 	keyOut.Close()
 
 	logger.Info("generated new self-signed TLS certificate",

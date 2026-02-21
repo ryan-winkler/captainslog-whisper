@@ -141,9 +141,12 @@ func parseVaultFile(path string) (Entry, error) {
 		return Entry{}, fmt.Errorf("empty body")
 	}
 
-	// Cap text at 500 chars to match localStorage entries
-	if len(body) > 500 {
-		body = body[:500]
+	// Cap text at 500 runes to match localStorage entries.
+	// WHY runes not bytes? Byte slicing at position 500 can split a multi-byte
+	// UTF-8 character (emoji, CJK), producing invalid UTF-8 in the response.
+	runes := []rune(body)
+	if len(runes) > 500 {
+		body = string(runes[:500])
 	}
 	entry.Text = body
 
@@ -182,8 +185,11 @@ func cleanMarkdown(text string) string {
 		if strings.HasPrefix(trimmed, "> ") {
 			trimmed = strings.TrimPrefix(trimmed, "> ")
 		}
-		// Strip emoji-only lines (like 🎙️ headers)
-		if len(trimmed) <= 4 {
+		// Skip emoji-only lines (single emoji that isn't useful as preview text).
+		// WHY len <= 2? Single ASCII chars like 'OK' or 'No' are valid content;
+		// only skip lines that are effectively empty (single emoji = 3-4 bytes
+		// but we check rune count to be safe).
+		if len([]rune(trimmed)) <= 1 {
 			continue
 		}
 		lines = append(lines, trimmed)

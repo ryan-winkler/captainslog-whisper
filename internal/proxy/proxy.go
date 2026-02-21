@@ -78,8 +78,13 @@ func (p *Proxy) Transcribe(w http.ResponseWriter, r *http.Request) {
 	wantsJSON := requestedFormat == "json" || requestedFormat == "verbose_json"
 	var backendBody []byte
 	if requestedFormat == "json" {
-		// Rewrite response_format field: json → verbose_json
-		backendBody = replaceMIMEField(bodyBytes, contentType, "response_format", "verbose_json")
+		// Try to rewrite existing response_format field: json → verbose_json
+		if extractMultipartField(bodyBytes, contentType, "response_format") != "" {
+			backendBody = replaceMIMEField(bodyBytes, contentType, "response_format", "verbose_json")
+		} else {
+			// No response_format field exists — add one
+			backendBody = addMIMEField(bodyBytes, contentType, "response_format", "verbose_json")
+		}
 		p.logger.Info("upgraded response_format to verbose_json for segment enrichment")
 	} else {
 		backendBody = bodyBytes
@@ -227,6 +232,38 @@ func replaceMIMEField(body []byte, contentType, field, newValue string) []byte {
 	}
 	// Replace the old value with the new one
 	result := s[:valueStart] + newValue + s[valueStart+valueEnd:]
+	return []byte(result)
+}
+
+// addMIMEField injects a new form field into a raw multipart body.
+// It inserts the field part before the final closing boundary marker.
+// WHY raw manipulation? We've already buffered the body bytes and need to
+// avoid re-parsing the multipart (which would require reading the full audio
+// file part into memory again).
+func addMIMEField(body []byte, contentType, field, value string) []byte {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return body
+	}
+	boundary, ok := params["boundary"]
+	if !ok {
+		return body
+	}
+
+	// Find the final boundary marker: --boundary--
+	closingBoundary := "--" + boundary + "--"
+	s := string(body)
+	idx := strings.LastIndex(s, closingBoundary)
+	if idx < 0 {
+		return body
+	}
+
+	// Build the new field part
+	newPart := fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=%q\r\n\r\n%s\r\n",
+		boundary, field, value)
+
+	// Insert before the closing boundary
+	result := s[:idx] + newPart + s[idx:]
 	return []byte(result)
 }
 
