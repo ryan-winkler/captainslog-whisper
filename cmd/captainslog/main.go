@@ -1024,12 +1024,19 @@ func main() {
 			targetPath = resolved
 		}
 
-		// Open the parent directory (not the file itself)
-		dir := filepath.Dir(targetPath)
-		if _, err := os.Stat(dir); err != nil {
-			httputil.Error(w, r, logger, http.StatusNotFound, "directory not found",
-				"WHY: os.Stat failed on parent directory")
-			return
+		// If targetPath is a directory, open it directly; if it's a file, open its parent
+		dir := targetPath
+		if info, err := os.Stat(targetPath); err != nil {
+			// Path doesn't exist — try opening the parent directory
+			dir = filepath.Dir(targetPath)
+			if _, err := os.Stat(dir); err != nil {
+				httputil.Error(w, r, logger, http.StatusNotFound, "directory not found",
+					"WHY: neither the path nor its parent directory exist")
+				return
+			}
+		} else if !info.IsDir() {
+			// It's a file — open the parent directory
+			dir = filepath.Dir(targetPath)
 		}
 
 		// Cross-platform open command

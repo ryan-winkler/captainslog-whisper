@@ -1809,9 +1809,9 @@
     // 📂 folder button — opens save directory
     if (historyFolderBtn) {
         historyFolderBtn.addEventListener('click', () => {
-            const saveDir = settings.save_dir;
+            const saveDir = settings.vault_dir;
             if (!saveDir) {
-                showToast('No save directory set — configure in Settings → Storage');
+                showToast('No vault directory set — configure in Settings → Storage');
                 return;
             }
             fetch('/api/open', {
@@ -1875,7 +1875,6 @@
                     currentTranscription = savedTranscription;
                 }
                 flashButton(llmBtn, '✅ Done', 'success');
-                setTimeout(() => flashButton(llmBtn, 'Send to AI', ''), 2000);
             } catch (err) {
                 clearTimeout(timeout);
                 let msg = err.message || 'Unknown error';
@@ -1887,7 +1886,6 @@
                     msg = 'Can\'t reach LLM — check URL in Settings';
                 }
                 flashButton(llmBtn, msg, 'error');
-                setTimeout(() => flashButton(llmBtn, 'Send to AI', ''), 4000);
             }
         });
         // Show/hide based on settings

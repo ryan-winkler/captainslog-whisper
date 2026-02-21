@@ -2123,12 +2123,6 @@ select.input {
     font-style: italic;
 }
 
-.history-count {
-    font-size: 0.75rem;
-    color: var(--accent);
-    margin-left: 4px;
-}
-
 /* --- Streaming LIVE badge --- */
 .connection-badge[data-streaming]::after {
     content: 'LIVE';
