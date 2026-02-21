@@ -616,15 +616,7 @@
 
         try {
             console.log(`Sending audio to ${endpoint}${translateMode ? ' (translate mode)' : ''}`);
-            // Abort after 90s to prevent infinite hang
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 90000);
-            let res;
-            try {
-                res = await fetch(endpoint, { method: 'POST', body: formData, signal: controller.signal });
-            } finally {
-                clearTimeout(timeoutId);
-            }
+            const res = await fetch(endpoint, { method: 'POST', body: formData });
             if (!res.ok) {
                 let detail = '';
                 try {

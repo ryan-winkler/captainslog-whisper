@@ -26,7 +26,7 @@ type Proxy struct {
 func New(backendURL string, logger *slog.Logger) *Proxy {
 	return &Proxy{
 		backendURL:   strings.TrimRight(backendURL, "/"),
-		client:       &http.Client{Timeout: 120 * time.Second},
+		client:       &http.Client{Timeout: 300 * time.Second},
 		healthClient: &http.Client{Timeout: 5 * time.Second},
 		logger:       logger,
 	}
