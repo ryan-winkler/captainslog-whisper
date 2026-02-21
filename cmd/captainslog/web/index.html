@@ -341,13 +341,23 @@
                     <label class="setting">
                         <span class="setting-label">Whisper model</span>
                         <select id="settModel" class="input">
-                            <option value="large-v3">large-v3 (best accuracy, slowest)</option>
-                            <option value="large-v3-turbo">large-v3-turbo ⚡ (8× faster, near-v3 quality)</option>
-                            <option value="distil-large-v3">distil-large-v3 (2× faster)</option>
-                            <option value="medium">medium (balanced)</option>
-                            <option value="small">small (fast)</option>
-                            <option value="base">base (fastest)</option>
-                            <option value="tiny">tiny (instant)</option>
+                            <optgroup label="Standard Whisper">
+                                <option value="large-v3">large-v3 (best accuracy, slowest)</option>
+                                <option value="large-v3-turbo">large-v3-turbo ⚡ (8× faster, near-v3 quality)</option>
+                                <option value="medium">medium (balanced)</option>
+                                <option value="small">small (fast)</option>
+                                <option value="base">base (fastest)</option>
+                                <option value="tiny">tiny (instant)</option>
+                            </optgroup>
+                            <optgroup label="Distil-Whisper (6× faster, English)">
+                                <option value="distil-whisper/distil-large-v3">distil-large-v3 ⚡ (best distilled)
+                                </option>
+                                <option value="distil-whisper/distil-large-v2">distil-large-v2 (stable alternative)
+                                </option>
+                                <option value="distil-whisper/distil-medium.en">distil-medium.en (good balance)</option>
+                                <option value="distil-whisper/distil-small.en">distil-small.en (166M, lowest memory)
+                                </option>
+                            </optgroup>
                         </select>
                     </label>
                     <label class="setting row">
@@ -449,9 +459,9 @@
                             readonly>
                     </label>
                     <label class="setting">
-                        <span class="setting-label">Whisper backend URL</span>
-                        <span class="setting-hint">The speech-to-text server that processes your audio. Default:
-                            faster-whisper-server on port 5000.</span>
+                        <span class="setting-label">🎙️ Whisper backend URL</span>
+                        <span class="setting-hint">The transcription engine (the "ears") — processes your audio into
+                            text. Default: faster-whisper-server on port 5000.</span>
                         <input type="text" id="settWhisperURL" class="input" placeholder="http://127.0.0.1:5000">
                     </label>
                     <label class="setting row">
@@ -461,8 +471,8 @@
                         <input type="checkbox" id="settEnableTLS" class="toggle">
                     </label>
                     <label class="setting row">
-                        <span class="setting-label">Enable Local LLM</span>
-                        <span class="setting-hint">Connect to a local AI model for post-processing —
+                        <span class="setting-label">🤖 Enable AI Assistant</span>
+                        <span class="setting-hint">The "brain" — connect to a local LLM for post-processing:
                             summarize, rewrite, extract action items. Requires Ollama or LM Studio.</span>
                         <input type="checkbox" id="settEnableLLM" class="toggle">
                     </label>

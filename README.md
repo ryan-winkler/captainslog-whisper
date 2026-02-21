@@ -75,40 +75,75 @@ systemctl --user enable --now captainslog
 
 ---
 
-## Using a Remote Whisper Server
+## How It Works
 
-Captain's Log doesn't need Whisper running on the same computer. If you have a more powerful machine (a VM, VPS, home server, etc.), you can point Captain's Log at it.
+Captain's Log connects to two optional services. You need the first one; the second is a bonus.
 
-### Setup
+| | 🎙️ Transcription Engine | 🤖 AI Assistant |
+|---|---|---|
+| **What** | Whisper (speech-to-text) | LLM (text cleanup / summarization) |
+| **Role** | The **ears** — turns your voice into text | The **brain** — polishes what you said |
+| **Required** | **Yes** — core function | **Yes** — post-processing built in |
+| **Examples** | whisper-fastapi, faster-whisper, Insanely Fast Whisper | Ollama, LM Studio, any OpenAI-compatible API |
+| **Configure** | Settings → Connections → Whisper Server URL | Settings → Connections → Enable AI Assistant |
 
-1. Run Whisper on the remote machine:
-   ```bash
-   # On your GPU server / VPS / VM:
-   docker run -d -p 5000:5000 --gpus all ghcr.io/heimoshuiyu/whisper-fastapi:latest
-   ```
+---
 
-2. Tell Captain's Log where to find it — pick any method:
+## Supported Transcription Backends
 
-   **Option A: Settings UI** (easiest)
-   Open Captain's Log → click ⚙️ Preferences → set **Whisper server URL** to your remote address (e.g. `http://192.168.1.100:5000`)
+Captain's Log works with any backend that speaks the OpenAI `/v1/audio/transcriptions` API. Here are your options:
 
-   **Option B: Environment variable**
-   ```bash
-   export CAPTAINSLOG_WHISPER_URL=http://192.168.1.100:5000
-   ```
+### Quick Start (Docker)
 
-   **Option C: systemd service**
-   ```bash
-   systemctl --user edit captainslog
-   # Add: Environment=CAPTAINSLOG_WHISPER_URL=http://your-server:5000
-   ```
+```bash
+# Standard — works everywhere
+docker run -d -p 5000:5000 ghcr.io/heimoshuiyu/whisper-fastapi:latest
 
-3. Verify the connection:
-   ```bash
-   curl http://your-server:5000/v1/models
-   ```
+# With NVIDIA GPU — much faster
+docker run -d -p 5000:5000 --gpus all ghcr.io/heimoshuiyu/whisper-fastapi:latest
 
-### Examples
+# Distil-Whisper — 6x faster, 49% smaller, ~1% WER (English)
+docker run -d -p 5000:5000 --gpus all \
+  -e WHISPER_MODEL=distil-whisper/distil-large-v3 \
+  ghcr.io/heimoshuiyu/whisper-fastapi:latest
+```
+
+### Backend Comparison
+
+| Backend | GPU | Speed | Docker | Notes |
+|---|---|---|---|---|
+| [whisper-fastapi](https://github.com/heimoshuiyu/whisper-fastapi) | NVIDIA/CPU | ⭐⭐⭐ | ✅ | Default, battle-tested |
+| [faster-whisper-server](https://github.com/fedirz/faster-whisper-server) | NVIDIA/CPU | ⭐⭐⭐⭐ | ✅ | CTranslate2 optimized |
+| [Distil-Whisper](https://huggingface.co/distil-whisper) models | NVIDIA/CPU | ⭐⭐⭐⭐⭐ | ✅ | 6x faster, use with any backend above |
+| [Wyoming Faster Whisper ROCm](https://github.com/Donkey545/wyoming-faster-whisper-rocm) | **AMD** | ⭐⭐⭐⭐ | ✅ | AMD GPU support via ROCm + Wyoming protocol |
+| [Insanely Fast Whisper](https://github.com/Vaibhavs10/insanely-fast-whisper) | NVIDIA/MPS | ⭐⭐⭐⭐⭐ | ❌ (CLI) | Flash Attention 2, 150min in <98s |
+
+### Distil-Whisper Models
+
+Distil-Whisper is a distilled version of Whisper — **6x faster, 49% smaller, within 1% WER**. English only (multilingual coming). Select these in Settings → Model:
+
+| Model | Size | Speed | Quality |
+|---|---|---|---|
+| `distil-whisper/distil-large-v3` | 756M | ⭐⭐⭐⭐⭐ | Best distilled |
+| `distil-whisper/distil-large-v2` | 756M | ⭐⭐⭐⭐⭐ | Stable alternative |
+| `distil-whisper/distil-medium.en` | 394M | ⭐⭐⭐⭐ | Good balance |
+| `distil-whisper/distil-small.en` | 166M | ⭐⭐⭐ | Lowest memory |
+
+### Insanely Fast Whisper (CLI)
+
+If you have an NVIDIA GPU or Apple Silicon, [Insanely Fast Whisper](https://github.com/Vaibhavs10/insanely-fast-whisper) offers the fastest transcription available — 150 minutes of audio in under 98 seconds:
+
+```bash
+# Install
+pipx install insanely-fast-whisper
+
+# Use with Distil-Whisper for maximum speed
+insanely-fast-whisper --model-name distil-whisper/distil-large-v3 --file-name audio.wav
+```
+
+### Using a Remote Server
+
+Captain's Log doesn't need Whisper running on the same computer. Point it at any machine:
 
 | Setup | Whisper URL |
 |---|---|
@@ -117,34 +152,52 @@ Captain's Log doesn't need Whisper running on the same computer. If you have a m
 | A VPS with a GPU | `http://gpu-server.example.com:5000` |
 | Docker on a NAS | `http://nas.local:5000` |
 
+Set the URL in **Settings → Connections → Whisper Server URL**, or:
+```bash
+export CAPTAINSLOG_WHISPER_URL=http://your-server:5000
+```
+
 > **Tip:** For remote servers, consider putting a reverse proxy (like Caddy or nginx) in front of Whisper with HTTPS.
 
 ---
 
 ## What Can It Do?
 
+### 🎙️ Core — Transcription
 | Feature | What it means |
 |---|---|
-| 🎙️ **Record & transcribe** | Click the mic, talk, get text |
-| 📁 **File upload** | Drag-and-drop audio or video files |
-| 🔗 **URL transcription** | Paste a YouTube or podcast URL — yt-dlp downloads and transcribes |
-| 📦 **Batch processing** | Drop multiple audio files — processed sequentially with progress |
-| 📋 **Copy to clipboard** | Transcribed text is automatically copied |
-| 💾 **Save to PKM** | Auto-save to [Obsidian](https://obsidian.md/), [Logseq](https://logseq.com/), or any folder |
-| 🔍 **Search history** | Instantly filter past transcriptions by text |
-| 📌 **Pin entries** | Star important transcriptions to keep them at the top |
-| 🤖 **Send to AI** | Clean up your dictation with a local LLM (Ollama, LM Studio) — proxied through Captain's Log |
-| ✍️ **Subtitle editor** | Full segment editor: split, insert, delete, edit timecodes, CPS warnings, undo (Ctrl+Z) |
-| 🎵 **Follow-along highlight** | During playback, the active segment highlights and auto-scrolls |
-| ⏩ **Playback speed** | 0.5×–2× speed control in the subtitle editor |
-| 📝 **Notes** | Add per-entry notes — persisted to localStorage, shown via 📝 indicator |
-| 👥 **Speaker diarization** | Automatic speaker identification with 8 distinct auto-assigned colors |
-| 📂 **Folder watcher** | Watch a directory for new audio files — auto-transcribes and saves to vault |
-| 📥 **Export** | `.txt`, `.md`, `.srt`, `.vtt`, `.json` — from main UI or subtitle editor |
-| ⌨️ **Keyboard shortcuts** | Space, Ctrl+C, Ctrl+S, `,`, M, Esc, `?` — press `?` for full overlay |
-| 📱 **Mini mode** | Compact widget view — press `M` or add `?mini` to the URL |
-| 🔴 **Live streaming** | Real-time transcription via WebSocket (experimental) |
-| 🔒 **Private** | Everything stays on your machine |
+| **Record & transcribe** | Click the mic, talk, get text |
+| **File upload** | Drag-and-drop audio or video files |
+| **URL transcription** | Paste a YouTube or podcast URL — yt-dlp downloads and transcribes |
+| **Batch processing** | Drop multiple audio files — processed sequentially with progress |
+| **Speaker diarization** | Automatic speaker identification with 8 distinct colors |
+| **Folder watcher** | Watch a directory for new audio files — auto-transcribes and saves |
+
+### ✍️ Editing & Playback
+| Feature | What it means |
+|---|---|
+| **Subtitle editor** | Split, insert, delete segments, edit timecodes, CPS warnings, undo (Ctrl+Z) |
+| **Follow-along highlight** | Active segment highlights and auto-scrolls during playback |
+| **Playback speed** | 0.5×–2× speed control in the editor |
+| **Notes** | Per-entry notes — persisted, shown via 📝 indicator |
+
+### 📥 Output & Storage
+| Feature | What it means |
+|---|---|
+| **Copy to clipboard** | Transcribed text is automatically copied |
+| **Save to PKM** | Auto-save to Obsidian, Logseq, or any folder |
+| **Export** | `.txt`, `.md`, `.srt`, `.vtt`, `.json`, `.lrc` — from main UI or editor |
+| **Search history** | Instantly filter past transcriptions |
+| **Pin entries** | Star important transcriptions to keep them at the top |
+
+### 🤖 AI & Extras
+| Feature | What it means |
+|---|---|
+| **Send to AI** | Post-process with Ollama, LM Studio, or any local LLM |
+| **Keyboard shortcuts** | Press `?` for the full overlay |
+| **Mini mode** | Compact widget — press `M` or add `?mini` to the URL |
+| **Live streaming** | Real-time transcription via WebSocket (experimental) |
+| **Private** | Everything stays on your machine |
 
 ---
 

@@ -362,15 +362,40 @@
         fetch('/api/models').then(r => r.json()).then(data => {
             const modelSelect = el('settModel');
             if (data.whisper && data.whisper.length > 0) {
-                const currentVal = modelSelect.value;
-                modelSelect.innerHTML = '';
+                const currentVal = modelSelect.value || settings.model || 'large-v3';
+
+                // Merge server-reported models into the Standard Whisper optgroup
+                let stdGroup = modelSelect.querySelector('optgroup[label="Standard Whisper"]');
+                if (!stdGroup) {
+                    // No optgroups — rebuild with structure
+                    stdGroup = document.createElement('optgroup');
+                    stdGroup.label = 'Standard Whisper';
+                    modelSelect.innerHTML = '';
+                    modelSelect.appendChild(stdGroup);
+                }
+
+                // Collect existing option values to avoid duplicates
+                const existing = new Set();
+                modelSelect.querySelectorAll('option').forEach(o => existing.add(o.value));
+
+                // Add any server models not already in the dropdown
                 data.whisper.forEach(m => {
-                    const opt = document.createElement('option');
-                    opt.value = m.id;
-                    opt.textContent = m.name;
-                    modelSelect.appendChild(opt);
+                    if (!existing.has(m.id)) {
+                        const opt = document.createElement('option');
+                        opt.value = m.id;
+                        opt.textContent = m.name || m.id;
+                        // Put distil models in Distil group if it exists
+                        if (m.id.includes('distil')) {
+                            let distilGroup = modelSelect.querySelector('optgroup[label*="Distil"]');
+                            if (distilGroup) distilGroup.appendChild(opt);
+                            else stdGroup.appendChild(opt);
+                        } else {
+                            stdGroup.appendChild(opt);
+                        }
+                    }
                 });
-                modelSelect.value = currentVal || settings.model || 'large-v3';
+
+                modelSelect.value = currentVal;
             }
         }).catch(() => { }); // Use hardcoded fallback in HTML
     }
