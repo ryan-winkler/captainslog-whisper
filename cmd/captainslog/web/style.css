@@ -95,6 +95,13 @@
     --status-green: #4ade80;
     --status-red: #f87171;
 
+    /* Aliases — used throughout, must be defined */
+    --text: var(--text-primary);
+    --text-dim: var(--text-muted);
+    --bg: var(--bg-primary);
+    --bg-modal: rgba(17, 24, 39, 0.95);
+    --accent-dim: rgba(196, 154, 108, 0.15);
+
     /* Effects */
     --radius: 12px;
     --radius-sm: 6px;
@@ -134,6 +141,16 @@ body::before {
 
 .hidden {
     display: none !important;
+}
+
+/* Focus-visible ring for keyboard navigation */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 
 /* Layout */
@@ -488,6 +505,17 @@ canvas {
 .action-btn.success {
     border-color: var(--status-green);
     color: var(--status-green);
+}
+
+.action-btn.error {
+    border-color: var(--status-red);
+    color: var(--status-red);
+}
+
+.action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
 }
 
 /* Export dropdown */
@@ -1288,16 +1316,11 @@ select.input {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 20px;
-    background: rgba(255, 255, 255, 0.03);
-    cursor: pointer;
-    transition: background 0.2s;
+    padding: 12px 0;
+    cursor: default;
     border-radius: 12px;
 }
 
-.history-header:hover {
-    background: rgba(255, 255, 255, 0.06);
-}
 
 .history-header h2 {
     font-size: 0.95rem;
@@ -1404,6 +1427,13 @@ select.input {
     flex-shrink: 0;
     align-items: center;
     flex-wrap: wrap;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.log-entry:hover .log-entry-actions,
+.log-entry:focus-within .log-entry-actions {
+    opacity: 1;
 }
 
 .log-action-select {
@@ -1575,27 +1605,6 @@ select.input {
     font-size: 0.7rem;
     color: var(--text-dim);
     font-style: italic;
-}
-
-/* --- History section --- */
-.history-section {
-    margin-top: 16px;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-    padding-top: 12px;
-}
-
-.history-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 8px;
-}
-
-.history-header h3 {
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--text-dim);
-    margin: 0;
 }
 
 .history-count {

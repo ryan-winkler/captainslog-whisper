@@ -932,6 +932,27 @@
             flashButton(bulkExportBtn, `Exported ${indices.length}!`, 'success');
         });
     }
+
+    // Bulk Delete
+    const bulkDeleteBtn = el('bulkDelete');
+    if (bulkDeleteBtn) {
+        bulkDeleteBtn.addEventListener('click', () => {
+            const indices = getSelectedIndices();
+            if (!indices.length) return;
+            if (!confirm(`Delete ${indices.length} transcription${indices.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
+            // Delete in reverse order to preserve indices
+            indices.sort((a, b) => b - a).forEach(idx => logHistory.splice(idx, 1));
+            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            renderHistory();
+            // Exit select mode
+            selectMode = false;
+            historySelectBtn.classList.remove('active');
+            historySelectBtn.textContent = 'Select';
+            historyBulkBar.classList.add('hidden');
+            historyList.classList.remove('select-mode');
+            flashButton(bulkDeleteBtn, `Deleted ${indices.length}!`, 'success');
+        });
+    }
     // Search history
     const historySearch = document.getElementById('historySearch');
     if (historySearch) {

@@ -195,6 +195,7 @@
                         <button class="bulk-btn" id="bulkCopy" title="Copy selected">📋 Copy</button>
                         <button class="bulk-btn" id="bulkSavePKM" title="Save selected">💾 Save</button>
                         <button class="bulk-btn" id="bulkExport" title="Export selected">📥 Export</button>
+                        <button class="bulk-btn danger" id="bulkDelete" title="Delete selected">🗑️ Delete</button>
                     </div>
                 </div>
 
@@ -428,9 +429,9 @@
     </div>
 
     <!-- Export As dialog -->
-    <div class="modal-overlay hidden" id="exportAsModal">
+    <div class="modal-overlay hidden" id="exportAsModal" role="dialog" aria-modal="true" aria-label="Export As">
         <div class="modal" style="max-width:340px;">
-            <h2>Export As…</h2>
+            <h2 style="padding: 16px 16px 0;">Export As…</h2>
             <div class="export-format-list" role="menu" id="exportFormatList">
                 <button role="menuitem" class="export-format-btn" data-fmt="txt">
                     <span class="export-fmt-icon">📄</span>
