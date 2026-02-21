@@ -251,8 +251,10 @@
                 </button>
             </div>
             <div class="modal-body">
-                <div class="setting-group">
-                    <h3>📁 Storage</h3>
+                <details class="setting-domain">
+                    <summary>
+                        <h3>📁 Storage</h3>
+                    </summary>
                     <label class="setting">
                         <span class="setting-label">Save directory</span>
                         <span class="setting-hint">Where transcriptions are saved as markdown files. Works with
@@ -296,9 +298,11 @@
                             Notes")</span>
                         <input type="text" id="settFileTitle" class="input" placeholder="Dictation">
                     </label>
-                </div>
-                <div class="setting-group">
-                    <h3>🎙️ Transcription</h3>
+                </details>
+                <details class="setting-domain" open>
+                    <summary>
+                        <h3>🎙️ Transcription</h3>
+                    </summary>
                     <label class="setting">
                         <span class="setting-label">Default language</span>
                         <select id="settLanguage" class="input">
@@ -350,9 +354,11 @@
                             <button class="btn-icon" data-open-dir="settTranslateDir" title="Open folder">📂</button>
                         </div>
                     </label>
-                </div>
-                <div class="setting-group">
-                    <h3>⚡ Behaviour</h3>
+                </details>
+                <details class="setting-domain">
+                    <summary>
+                        <h3>⚡ Behaviour</h3>
+                    </summary>
                     <label class="setting row">
                         <span class="setting-label">Auto-copy to clipboard</span>
                         <span class="setting-hint">Automatically copy each transcription to your clipboard after
@@ -413,9 +419,11 @@
                             Leave blank to disable.</span>
                         <input type="text" id="settTranscriptDir" class="input" placeholder="~/Documents/transcripts/">
                     </label>
-                </div>
-                <div class="setting-group">
-                    <h3>🔌 Connections</h3>
+                </details>
+                <details class="setting-domain">
+                    <summary>
+                        <h3>🔌 Connections</h3>
+                    </summary>
                     <label class="setting">
                         <span class="setting-label">Port</span>
                         <span class="setting-hint">HTTP port Captain's Log listens on. Change requires restart.</span>
@@ -456,9 +464,11 @@
                             <button id="refreshLLMModels" class="btn-icon" aria-label="Refresh LLM models">↻</button>
                         </div>
                     </label>
-                </div>
-                <div class="setting-group">
-                    <h3>🔬 Advanced</h3>
+                </details>
+                <details class="setting-domain">
+                    <summary>
+                        <h3>🔬 Advanced</h3>
+                    </summary>
                     <label class="setting row">
                         <span class="setting-label">Word-level timestamps</span>
                         <span class="setting-hint">Get timestamps for each word, not just each segment. Useful for
@@ -484,16 +494,18 @@
                         <input type="number" id="settTemperature" class="input" min="0" max="1" step="0.1" value="0"
                             placeholder="0">
                     </label>
-                </div>
-                <div class="setting-group">
-                    <h3>📊 Observability</h3>
+                </details>
+                <details class="setting-domain">
+                    <summary>
+                        <h3>📊 Observability</h3>
+                    </summary>
                     <label class="setting row">
                         <span class="setting-label">Access logging</span>
                         <span class="setting-hint">Log every HTTP request to stdout in JSON format. Useful for debugging
                             or Grafana/Loki integration. Off by default.</span>
                         <input type="checkbox" id="settAccessLog" class="toggle">
                     </label>
-                </div>
+                </details>
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" id="resetSettings">Reset</button>

@@ -304,7 +304,13 @@
             e.stopPropagation();
             const inputId = openBtn.dataset.openDir;
             const dir = el(inputId)?.value;
-            if (dir) fetch('/api/open?path=' + encodeURIComponent(dir), { method: 'POST' });
+            if (dir) {
+                fetch('/api/open', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: dir })
+                });
+            }
         }
     });
     saveSettings.addEventListener('click', () => { saveSettingsToServer(); setTimeout(() => settingsModal.classList.add('hidden'), 600); });
@@ -531,11 +537,20 @@
     // --- Waveform (frequency bars) ---
     function drawWaveform() {
         if (!analyser) return;
+
+        // Sync canvas internal resolution with its display size
+        const rect = waveform.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        waveform.width = Math.round(rect.width * dpr);
+        waveform.height = Math.round(rect.height * dpr);
+
         const ctx = waveform.getContext('2d');
+        ctx.scale(dpr, dpr);
+
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
-        const width = waveform.width;
-        const height = waveform.height;
+        const width = rect.width;
+        const height = rect.height;
         const barCount = 64;
         const barWidth = (width / barCount) - 1;
         const gradient = ctx.createLinearGradient(0, height, 0, 0);
@@ -547,15 +562,15 @@
             analyser.getByteFrequencyData(dataArray);
             ctx.fillStyle = 'rgba(10, 14, 26, 0.4)';
             ctx.fillRect(0, 0, width, height);
-            const step = Math.floor(bufferLength / barCount);
+            const step = Math.max(1, Math.floor(bufferLength / barCount));
             for (let i = 0; i < barCount; i++) {
                 let sum = 0;
                 for (let j = 0; j < step; j++) {
-                    sum += dataArray[i * step + j];
+                    sum += dataArray[i * step + j] || 0;
                 }
                 const avg = sum / step;
                 const barHeight = (avg / 255) * height * 0.9;
-                const x = width - ((i + 1) * (barWidth + 1));
+                const x = i * (barWidth + 1);
                 ctx.fillStyle = gradient;
                 ctx.fillRect(x, height - barHeight, barWidth, barHeight);
             }
@@ -1659,8 +1674,8 @@
             return;
         }
 
-        // All other shortcuts require not being in an input
-        if (inInput || isButton) return;
+        // All other shortcuts require not being in a text input
+        if (inInput) return;
 
         switch (true) {
             case e.code === 'Space':
