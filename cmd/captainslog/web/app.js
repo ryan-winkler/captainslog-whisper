@@ -1525,29 +1525,43 @@
     }
 
     function generateSRT(segments, fallbackText) {
-        if (!segments || segments.length === 0) return '1\n00:00:00,000 --> 00:00:10,000\n' + fallbackText;
+        if (!segments || segments.length === 0) {
+            return '1\n00:00:00,000 --> 00:00:10,000\n' + fallbackText + '\n';
+        }
         return segments.map((s, i) => {
-            return `${i + 1}\n${formatSrtTime(s.start)} --> ${formatSrtTime(s.end)}\n${s.text.trim()}`;
-        }).join('\n\n');
+            const start = formatSrtTime(s.start);
+            const end = formatSrtTime(s.end);
+            const text = (s.text || '').trim() || '...';
+            return `${i + 1}\n${start} --> ${end}\n${text}`;
+        }).join('\n\n') + '\n';
     }
 
     function generateVTT(segments, fallbackText) {
-        if (!segments || segments.length === 0) return '00:00:00.000 --> 00:00:10.000\n' + fallbackText;
-        return segments.map(s => {
-            return `${formatVttTime(s.start)} --> ${formatVttTime(s.end)}\n${s.text.trim()}`;
-        }).join('\n\n');
+        if (!segments || segments.length === 0) {
+            return '1\n00:00:00.000 --> 00:00:10.000\n' + fallbackText + '\n';
+        }
+        return segments.map((s, i) => {
+            const start = formatVttTime(s.start);
+            const end = formatVttTime(s.end);
+            const text = (s.text || '').trim() || '...';
+            return `${i + 1}\n${start} --> ${end}\n${text}`;
+        }).join('\n\n') + '\n';
     }
 
     function formatSrtTime(seconds) {
-        const date = new Date(seconds * 1000);
-        const hh = String(date.getUTCHours()).padStart(2, '0');
-        const mm = String(date.getUTCMinutes()).padStart(2, '0');
-        const ss = String(date.getUTCSeconds()).padStart(2, '0');
-        const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
-        return `${hh}:${mm}:${ss},${ms}`;
+        if (typeof seconds !== 'number' || isNaN(seconds) || seconds < 0) seconds = 0;
+        const totalMs = Math.round(seconds * 1000);
+        const ms = totalMs % 1000;
+        const totalSec = Math.floor(totalMs / 1000);
+        const ss = totalSec % 60;
+        const totalMin = Math.floor(totalSec / 60);
+        const mm = totalMin % 60;
+        const hh = Math.floor(totalMin / 60);
+        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')},${String(ms).padStart(3, '0')}`;
     }
 
     function formatVttTime(seconds) {
+        // VTT uses dots for decimals, SRT uses commas
         return formatSrtTime(seconds).replace(',', '.');
     }
 
