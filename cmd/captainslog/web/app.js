@@ -1002,9 +1002,11 @@
                         <span class="log-entry-time">${timeStr}</span>
                         <span>${dateStr}</span>
                         ${stardate}
+                        <span class="word-count">${entry.text.split(/\s+/).filter(w => w).length}w</span>
                         ${isPinned ? '<span class="pin-badge">📌</span>' : ''}
                         ${entry.recording ? '<span>🎙️</span>' : ''}
                         ${entry.vault_file ? '<span>📁</span>' : ''}
+                        ${entry.notes ? '<span title="Has notes">📝</span>' : ''}
                     </div>
                     <div class="log-entry-text">${preview}</div>
                 </div>
@@ -2251,5 +2253,39 @@
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch((e) => { console.warn('SW registration failed:', e); });
     }
+
+    // ====================================================================
+    // KEYBOARD SHORTCUT OVERLAY (? key — standard UX pattern)
+    // ====================================================================
+    const shortcutOverlay = document.createElement('div');
+    shortcutOverlay.className = 'shortcut-overlay';
+    shortcutOverlay.innerHTML = `<div class="shortcut-card">
+        <h3>⌨️ Keyboard Shortcuts</h3>
+        <div class="shortcut-row"><span>Record / Stop</span><kbd>Space</kbd></div>
+        <div class="shortcut-row"><span>Copy transcription</span><kbd>Ctrl+C</kbd></div>
+        <div class="shortcut-row"><span>Save to vault</span><kbd>Ctrl+S</kbd></div>
+        <div class="shortcut-row"><span>Open settings</span><kbd>,</kbd></div>
+        <div class="shortcut-row"><span>Toggle mini mode</span><kbd>M</kbd></div>
+        <div class="shortcut-row"><span>Close modal</span><kbd>Esc</kbd></div>
+        <div class="shortcut-row"><span>Show shortcuts</span><kbd>?</kbd></div>
+        <h3 style="margin-top:12px;">✍️ Subtitle Editor</h3>
+        <div class="shortcut-row"><span>Save edits</span><kbd>Ctrl+S</kbd></div>
+        <div class="shortcut-row"><span>Undo</span><kbd>Ctrl+Z</kbd></div>
+        <div class="shortcut-row"><span>Close editor</span><kbd>Esc</kbd></div>
+    </div>`;
+    document.body.appendChild(shortcutOverlay);
+
+    shortcutOverlay.addEventListener('click', (e) => {
+        if (e.target === shortcutOverlay) shortcutOverlay.classList.remove('visible');
+    });
+
+    document.addEventListener('keydown', (e) => {
+        // Don't trigger in inputs
+        if (e.target.matches('input, textarea, select')) return;
+        if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+            e.preventDefault();
+            shortcutOverlay.classList.toggle('visible');
+        }
+    });
 
 })();

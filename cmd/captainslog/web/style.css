@@ -1844,6 +1844,71 @@ select.input {
     color: var(--text-dim);
 }
 
+.word-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+/* Keyboard shortcut overlay */
+.shortcut-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.shortcut-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.shortcut-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 28px;
+    max-width: 420px;
+    width: 90vw;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.shortcut-card h3 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.shortcut-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.shortcut-row:last-child {
+    border-bottom: none;
+}
+
+.shortcut-row kbd {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 1px 5px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-primary);
+}
+
 .log-entry-time {
     font-family: var(--mono);
     color: var(--accent);
