@@ -613,7 +613,7 @@
         showProcessing(true, processingMsg);
         const formData = new FormData();
         formData.append('file', audioBlob, 'recording.webm');
-        formData.append('response_format', 'verbose_json');
+        formData.append('response_format', 'json');
         const lang = settings.language || 'en';
         if (lang && lang !== 'und') formData.append('language', lang);
         if (settings.prompt) formData.append('prompt', settings.prompt);
