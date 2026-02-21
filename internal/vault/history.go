@@ -199,8 +199,8 @@ func normalizeTimestamp(ts string) string {
 		"2006-01-02 15:04:05",
 		"2006-01-02",
 	}
-	for _, fmt := range formats {
-		if t, err := time.Parse(fmt, ts); err == nil {
+	for _, layout := range formats {
+		if t, err := time.Parse(layout, ts); err == nil {
 			return t.Format(time.RFC3339)
 		}
 	}

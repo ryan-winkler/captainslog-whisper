@@ -718,6 +718,7 @@ func main() {
 			}
 			settings.TranscriptDir = update.TranscriptDir
 			settings.TranslateDir = update.TranslateDir
+			settings.WatchDir = update.WatchDir
 			settings.mu.Unlock()
 
 			// Persist to file
