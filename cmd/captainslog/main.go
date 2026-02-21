@@ -449,9 +449,14 @@ func main() {
 		defer os.RemoveAll(tmpDir)
 
 		outPath := filepath.Join(tmpDir, "audio.wav")
+		// WHY 5-minute timeout? yt-dlp downloads can hang indefinitely on bad
+		// URLs, geo-blocked content, or rate-limited servers. 5 minutes is generous
+		// for any reasonable audio download + ffmpeg conversion.
+		dlCtx, dlCancel := context.WithTimeout(r.Context(), 5*time.Minute)
+		defer dlCancel()
 		// WHY wav + ar 16000? Whisper expects 16kHz mono audio. yt-dlp + ffmpeg
 		// handles the conversion, avoiding any format compatibility issues.
-		cmd := exec.CommandContext(r.Context(), "yt-dlp",
+		cmd := exec.CommandContext(dlCtx, "yt-dlp",
 			"--no-playlist",
 			"--extract-audio",
 			"--audio-format", "wav",
@@ -465,27 +470,38 @@ func main() {
 			if len(errMsg) > 500 {
 				errMsg = errMsg[:500]
 			}
-			logger.Error("yt-dlp failed", "error", err, "output", errMsg)
+			// Distinguish timeout from other errors for better UX
+			reason := "WHY: yt-dlp could not download audio from the URL — check URL validity and yt-dlp installation"
+			if dlCtx.Err() == context.DeadlineExceeded {
+				reason = "WHY: yt-dlp download timed out after 5 minutes — URL may be slow, geo-blocked, or invalid"
+			}
+			logger.Error("yt-dlp failed", "error", err, "output", errMsg, "timeout", dlCtx.Err() != nil)
 			httputil.Error(w, r, logger, http.StatusBadRequest,
-				fmt.Sprintf("yt-dlp failed: %s", errMsg),
-				"WHY: yt-dlp could not download audio from the URL — check URL validity and yt-dlp installation")
+				fmt.Sprintf("yt-dlp failed: %s", errMsg), reason)
 			return
 		}
 
-		// Read the downloaded audio
-		audioData, err := os.ReadFile(outPath)
+		// Stream the downloaded audio directly into the multipart writer.
+		// WHY streaming? For large files (podcasts, lectures), reading the entire
+		// file into memory doubles memory usage. Streaming from disk avoids this.
+		audioFile, err := os.Open(outPath)
 		if err != nil {
-			httputil.ServerError(w, r, logger, "read audio failed", "WHY: os.ReadFile on yt-dlp output failed", err)
+			httputil.ServerError(w, r, logger, "read audio failed", "WHY: os.Open on yt-dlp output failed", err)
 			return
 		}
-
-		logger.Info("audio downloaded", "url", req.URL, "size_mb", len(audioData)/(1024*1024))
+		audioStat, _ := audioFile.Stat()
+		var sizeMB int64
+		if audioStat != nil {
+			sizeMB = audioStat.Size() / (1024 * 1024)
+		}
+		logger.Info("audio downloaded", "url", req.URL, "size_mb", sizeMB)
 
 		// Send to Whisper backend via multipart
 		var buf bytes.Buffer
 		mpWriter := multipart.NewWriter(&buf)
 		part, _ := mpWriter.CreateFormFile("file", "audio.wav")
-		part.Write(audioData)
+		io.Copy(part, audioFile)
+		audioFile.Close()
 		mpWriter.WriteField("response_format", "json")
 		lang := req.Language
 		if lang == "" {
