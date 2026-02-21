@@ -151,6 +151,9 @@
     checkHealth();
     setInterval(checkHealth, 30000);
 
+    // Flush debounced history on page unload to prevent data loss
+    window.addEventListener('beforeunload', () => persistHistoryNow());
+
     // --- Header time (stardate or normal clock) ---
     function updateHeaderTime() {
         if (settings.show_stardates !== false) {
@@ -1996,7 +1999,7 @@
         if (editorHistoryIdx >= 0 && editorHistoryIdx < logHistory.length) {
             logHistory[editorHistoryIdx].segments = JSON.parse(JSON.stringify(editorSegments));
             logHistory[editorHistoryIdx].text = editorSegments.map(s => (s.text || '').trim()).join(' ');
-            persistHistory();
+            persistHistoryNow(); // Immediate save — user explicitly hit Save
             renderHistory();
         }
         // Also update currentSegments if editing the live transcription
@@ -2204,7 +2207,11 @@
             urlInput.value = '';
         } catch (err) {
             console.error('URL transcription failed:', err);
-            appendTranscription(`Error: ${err.message}`, false);
+            let errorMsg = err.message;
+            if (errorMsg.includes('yt-dlp')) {
+                errorMsg += '\n\n💡 Tip: Install yt-dlp with: pip install yt-dlp';
+            }
+            appendTranscription(`Error: ${errorMsg}`, false);
         } finally {
             btn.disabled = false;
             btn.textContent = '🔗 Transcribe';
