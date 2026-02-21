@@ -324,9 +324,66 @@ Or if it's on a remote machine, check that the URL in Preferences → Whisper se
 
 ### Transcription is slow
 
-- Without a GPU, transcription takes longer — this is normal
-- Consider running Whisper on a machine with a GPU (see [Remote Whisper](#using-a-remote-whisper-server))
-- Try a smaller model: set `model` to `small` or `medium` in Preferences
+Transcription speed depends on three things: **model size**, **hardware**, and **settings**.
+
+#### Quick wins (settings you can change right now)
+
+| Setting | Recommendation | Why |
+|---|---|---|
+| **Beam size** | `5` (default) | Higher ≠ better. `10` is 2× slower with negligible quality gain. |
+| **Skip silence (VAD)** | **Enable** | Skips quiet parts — huge speedup for recordings with pauses |
+| **Speaker labels (diarize)** | Disable when not needed | Expensive post-processing pass |
+| **Word timestamps** | Disable when not needed | Extra alignment pass after transcription |
+| **Model** | `large-v3-turbo` | **8× faster** than `large-v3` with minimal quality loss |
+
+#### Model comparison (CPU, int8)
+
+| Model | Speed | Quality | Best for |
+|---|---|---|---|
+| `large-v3` | Slowest | Best | Final/archival transcriptions |
+| `large-v3-turbo` | **8× faster** | Near-v3 | ⭐ Recommended default |
+| `distil-large-v3` | 2× faster | Good | English-only use |
+| `medium` | 4× faster | Good | Low-end hardware |
+| `small` | 8× faster | OK | Quick drafts |
+| `base` / `tiny` | Instant | Basic | Real-time / low-power |
+
+#### AMD GPU acceleration
+
+**If you have an AMD GPU** (like the RX 7900 XTX), `faster-whisper` / CTranslate2 **cannot use it** — they only support NVIDIA CUDA. However, **whisper.cpp supports AMD GPUs** via ROCm:
+
+```bash
+# Build whisper.cpp with ROCm (HIPBLAS) support
+git clone https://github.com/ggerganov/whisper.cpp
+cd whisper.cpp
+cmake -B build -DGGML_HIPBLAS=1
+cmake --build build --config Release -j
+
+# Download a model
+./build/bin/whisper-cli --download-model large-v3-turbo
+
+# Run the server (OpenAI-compatible API)
+./build/bin/whisper-server \
+  --model models/ggml-large-v3-turbo.bin \
+  --host 0.0.0.0 --port 5000
+```
+
+> **Expected speedup:** ~7× faster than CPU. The RX 7900 XTX (24GB VRAM) handles `large-v3` comfortably.
+
+Then point Captain's Log at it — same URL, same API:
+```
+Preferences → Connections → Whisper backend URL → http://127.0.0.1:5000
+```
+
+#### NVIDIA GPU acceleration
+
+```bash
+# Docker (fastest setup)
+docker run -d -p 5000:5000 --gpus all ghcr.io/heimoshuiyu/whisper-fastapi:latest
+
+# Or pip
+pip install faster-whisper
+# faster-whisper automatically uses CUDA when available
+```
 
 ### Built-in diagnostics
 
@@ -564,7 +621,7 @@ Safari requires HTTPS for microphone access on iOS (localhost doesn't bypass thi
 | **"No microphone detected"** | Verify audio input device is connected and selected in OS sound settings |
 | **Recording works but transcription fails** | Check Whisper is running: `curl http://localhost:5000/v1/models` |
 | **"Backend unreachable"** | Start the Whisper server: `docker run -d -p 5000:5000 ghcr.io/heimoshuiyu/whisper-fastapi:latest` |
-| **Slow transcription** | Use a GPU: `--gpus all` in Docker, or try a smaller model (small/base/tiny) |
+| **Slow transcription** | Enable VAD, reduce beam_size to 5, try `large-v3-turbo`. AMD GPU? Use [whisper.cpp with ROCm](#amd-gpu-acceleration). See [full guide](#transcription-is-slow). |
 | **Rate limit error** | Disabled by default. If enabled, set `CAPTAINSLOG_RATE_LIMIT=0` to disable |
 | **PWA won't install** | Must be on HTTPS or localhost. Try Chrome → ⋮ → Install app |
 | **Ctrl+S saves HTML page** | Update to latest version — this was fixed in v0.2.0 |
@@ -597,10 +654,10 @@ Captain's Log uses standard APIs (OpenAI-compatible `/v1/audio/transcriptions`) 
 
 | Backend | Best For | Setup |
 |---|---|---|
-| [faster-whisper-server](https://github.com/fedirz/faster-whisper-server) | Default, fast GPU inference | `pip install faster-whisper-server && uvicorn ...` |
+| [whisper.cpp](https://github.com/ggerganov/whisper.cpp) | **AMD GPU (ROCm)**, low-memory, C++ | Build with `-DGGML_HIPBLAS=1`, run `whisper-server` |
+| [faster-whisper-server](https://github.com/fedirz/faster-whisper-server) | NVIDIA GPU, fast inference | `pip install faster-whisper-server && uvicorn ...` |
 | [whisper-fastapi](https://github.com/heimoshuiyu/whisper-fastapi) | Home Assistant / webhook integration | Docker: `ghcr.io/heimoshuiyu/whisper-fastapi` |
 | [SYSTRAN/faster-whisper](https://github.com/SYSTRAN/faster-whisper) | Library for custom backends | Python library — build your own API around it |
-| [Google Live Transcribe](https://github.com/google/live-transcribe-speech-engine) | Mobile / Android companion | Separate app — can share audio sources |
 
 ### Live Streaming
 
