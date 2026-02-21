@@ -381,10 +381,34 @@ canvas {
 }
 
 .timer {
-    font-family: var(--mono);
-    font-size: 18px;
-    color: var(--text-secondary);
-    letter-spacing: 1px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.5rem;
+    color: var(--accent);
+    min-width: 80px;
+    text-align: center;
+    letter-spacing: 2px;
+}
+
+/* Translate → EN toggle in recording controls */
+.translate-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.translate-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: color 0.2s;
+}
+
+.translate-toggle input:checked~.translate-label {
+    color: var(--accent);
+    font-weight: 600;
 }
 
 /* Upload zone */

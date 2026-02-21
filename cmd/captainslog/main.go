@@ -72,6 +72,11 @@ type runtimeSettings struct {
 	StreamURL     string `json:"stream_url"`
 	EnableTLS     bool   `json:"enable_tls"`
 	DefaultExportFormat string `json:"default_export_format"`
+	// Advanced transcription parameters (feature parity with faster-whisper)
+	WordTimestamps          bool    `json:"word_timestamps"`
+	BeamSize                int     `json:"beam_size"`
+	Temperature             float64 `json:"temperature"`
+	ConditionOnPreviousText *bool   `json:"condition_on_previous_text"` // pointer to distinguish false from unset
 }
 
 func main() {
@@ -533,6 +538,15 @@ func main() {
 			}
 			if update.DefaultExportFormat != "" {
 				settings.DefaultExportFormat = update.DefaultExportFormat
+			}
+			// Advanced transcription parameters
+			settings.WordTimestamps = update.WordTimestamps
+			if update.BeamSize > 0 {
+				settings.BeamSize = update.BeamSize
+			}
+			settings.Temperature = update.Temperature
+			if update.ConditionOnPreviousText != nil {
+				settings.ConditionOnPreviousText = update.ConditionOnPreviousText
 			}
 			settings.mu.Unlock()
 

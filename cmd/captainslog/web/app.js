@@ -181,6 +181,16 @@
         el('settAccessLog').checked = !!settings.access_log;
         el('settTimeFormat').value = settings.time_format || 'system';
 
+        // Advanced transcription parameters
+        el('settWordTimestamps').checked = !!settings.word_timestamps;
+        el('settConditionPrev').checked = settings.condition_on_previous_text !== false;
+        el('settBeamSize').value = settings.beam_size ?? 5;
+        el('settTemperature').value = settings.temperature ?? 0;
+
+        // Translate mode toggle (in record controls, not settings)
+        const translateEl = el('translateMode');
+        if (translateEl) translateEl.checked = !!settings.translate_mode;
+
         // Show recordings dir (read-only)
         const recDir = (settings.config_dir || '~/.config/captainslog') + '/recordings';
         el('settRecordingsDir').value = recDir;
@@ -215,6 +225,12 @@
         settings.history_limit = parseInt(el('settHistoryLimit').value) || 5;
         settings.enable_tls = el('settEnableTLS').checked;
         settings.default_export_format = el('settExportFormat').value;
+
+        // Advanced transcription parameters
+        settings.word_timestamps = el('settWordTimestamps').checked;
+        settings.condition_on_previous_text = el('settConditionPrev').checked;
+        settings.beam_size = parseInt(el('settBeamSize').value) || 5;
+        settings.temperature = parseFloat(el('settTemperature').value) || 0;
 
 
         updateHeaderTime();
@@ -572,8 +588,18 @@
         if (settings.vad_filter) formData.append('vad_filter', 'true');
         if (settings.diarize) formData.append('diarize', 'true');
 
+        // Advanced parameters (feature parity with faster-whisper)
+        if (settings.word_timestamps) formData.append('word_timestamps', 'true');
+        if (settings.beam_size && settings.beam_size !== 5) formData.append('beam_size', String(settings.beam_size));
+        if (settings.temperature && settings.temperature > 0) formData.append('temperature', String(settings.temperature));
+        if (settings.condition_on_previous_text === false) formData.append('condition_on_previous_text', 'false');
+
+        // Translate mode: use translation endpoint instead of transcription
+        const translateMode = el('translateMode')?.checked || false;
+        const endpoint = translateMode ? '/v1/audio/translations' : '/v1/audio/transcriptions';
+
         try {
-            const res = await fetch('/v1/audio/transcriptions', { method: 'POST', body: formData });
+            const res = await fetch(endpoint, { method: 'POST', body: formData });
             if (!res.ok) {
                 let detail = '';
                 try {

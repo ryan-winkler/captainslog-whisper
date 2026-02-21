@@ -81,6 +81,10 @@
                         </button>
                     </div>
                     <span class="timer" id="timer">00:00</span>
+                    <label class="translate-toggle" title="Translate audio to English instead of transcribing">
+                        <input type="checkbox" id="translateMode" class="toggle">
+                        <span class="translate-label">Translate → EN</span>
+                    </label>
                 </div>
 
                 <!-- Upload Zone -->
@@ -302,6 +306,7 @@
                         <span class="setting-label">Whisper model</span>
                         <select id="settModel" class="input">
                             <option value="large-v3">large-v3 (best accuracy)</option>
+                            <option value="distil-large-v3">distil-large-v3 (2× faster)</option>
                             <option value="medium">medium (balanced)</option>
                             <option value="small">small (fast)</option>
                             <option value="base">base (fastest)</option>
@@ -409,6 +414,34 @@
                             </select>
                             <button id="refreshLLMModels" class="btn-icon" aria-label="Refresh LLM models">↻</button>
                         </div>
+                    </label>
+                </div>
+                <div class="setting-group">
+                    <h3>🔬 Advanced</h3>
+                    <label class="setting row">
+                        <span class="setting-label">Word-level timestamps</span>
+                        <span class="setting-hint">Get timestamps for each word, not just each segment. Useful for
+                            subtitle editing.</span>
+                        <input type="checkbox" id="settWordTimestamps" class="toggle">
+                    </label>
+                    <label class="setting row">
+                        <span class="setting-label">Condition on previous text</span>
+                        <span class="setting-hint">Use previous output as context for the next segment. Improves
+                            coherence but may cause repetition loops. Disable for distil-whisper models.</span>
+                        <input type="checkbox" id="settConditionPrev" class="toggle" checked>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Beam size</span>
+                        <span class="setting-hint">Number of beams for search (higher = more accurate, slower). Default:
+                            5.</span>
+                        <input type="number" id="settBeamSize" class="input" min="1" max="20" value="5" placeholder="5">
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Temperature</span>
+                        <span class="setting-hint">Sampling temperature (0 = deterministic, higher = more creative).
+                            Default: 0.</span>
+                        <input type="number" id="settTemperature" class="input" min="0" max="1" step="0.1" value="0"
+                            placeholder="0">
                     </label>
                 </div>
                 <div class="setting-group">
