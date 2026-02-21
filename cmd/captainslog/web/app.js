@@ -127,6 +127,23 @@
     // --- Transcription history (Clipy-inspired log archive) ---
     let logHistory = JSON.parse(localStorage.getItem('captainslog_history') || '[]');
 
+    // WHY debounced? Serializing full history to localStorage on every mutation
+    // is O(n) for n entries. With 9+ call-sites, rapid mutations (bulk ops,
+    // notes typing, editor saves) would serialize multiple times per frame.
+    // This batches writes with a 200ms window — same result, far less work.
+    let _persistTimer = null;
+    function persistHistory() {
+        clearTimeout(_persistTimer);
+        _persistTimer = setTimeout(() => {
+            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+        }, 200);
+    }
+    // Immediate persist for critical paths (page unload, explicit save)
+    function persistHistoryNow() {
+        clearTimeout(_persistTimer);
+        localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+    }
+
     // --- Init ---
     loadSettings();
     updateHeaderTime();
@@ -887,7 +904,7 @@
         }
         logHistory.unshift(entry);
         if (logHistory.length > 50) logHistory = logHistory.slice(0, 50);
-        localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+        persistHistory();
         renderHistory();
     }
 
@@ -1093,7 +1110,7 @@
             if (!confirm(`Delete ${indices.length} transcription${indices.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
             // Delete in reverse order to preserve indices
             indices.sort((a, b) => b - a).forEach(idx => logHistory.splice(idx, 1));
-            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            persistHistory();
             renderHistory();
             // Exit select mode
             selectMode = false;
@@ -1188,7 +1205,7 @@
             const indices = getPinnedSelectedIndices();
             if (!indices.length) return;
             indices.forEach(idx => { if (logHistory[idx]) logHistory[idx].pinned = false; });
-            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            persistHistory();
             renderHistory();
             exitPinnedSelectMode();
             flashButton(pinnedBulkUnpinBtn, `Unpinned ${indices.length}!`, 'success');
@@ -1203,7 +1220,7 @@
             if (!indices.length) return;
             if (!confirm(`Delete ${indices.length} pinned transcription${indices.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
             indices.sort((a, b) => b - a).forEach(idx => logHistory.splice(idx, 1));
-            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            persistHistory();
             renderHistory();
             exitPinnedSelectMode();
             flashButton(pinnedBulkDeleteBtn, `Deleted ${indices.length}!`, 'success');
@@ -1219,7 +1236,7 @@
             const idx = parseInt(pinBtn.dataset.pin, 10);
             if (logHistory[idx]) {
                 logHistory[idx].pinned = !logHistory[idx].pinned;
-                localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+                persistHistory();
                 renderHistory();
             }
             return;
@@ -1361,7 +1378,7 @@
                 ta.rows = 3;
                 ta.addEventListener('input', () => {
                     logHistory[idx].notes = ta.value;
-                    localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+                    persistHistory();
                 });
                 notesWrap.appendChild(ta);
                 entryEl.querySelector('.log-entry-body')?.appendChild(notesWrap);
@@ -1385,7 +1402,7 @@
                 }).then(r => r.json()).then(data => {
                     if (data.file) {
                         logHistory[idx].vault_file = data.file;
-                        localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+                        persistHistory();
                         renderHistory();
                     }
                 }).catch(err => console.warn('PKM save failed:', err));
@@ -1401,7 +1418,7 @@
             const idx = parseInt(deleteBtn.dataset.delete);
             if (logHistory[idx] && confirm('Delete this transcription?\n\n"' + logHistory[idx].text.substring(0, 80) + '…"')) {
                 logHistory.splice(idx, 1);
-                localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+                persistHistory();
                 renderHistory();
             }
             return;
@@ -1979,7 +1996,7 @@
         if (editorHistoryIdx >= 0 && editorHistoryIdx < logHistory.length) {
             logHistory[editorHistoryIdx].segments = JSON.parse(JSON.stringify(editorSegments));
             logHistory[editorHistoryIdx].text = editorSegments.map(s => (s.text || '').trim()).join(' ');
-            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            persistHistory();
             renderHistory();
         }
         // Also update currentSegments if editing the live transcription
