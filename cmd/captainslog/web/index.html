@@ -117,7 +117,8 @@
                 </div>
                 <div class="processing" id="processing" aria-live="polite" role="status">
                     <div class="spinner"></div>
-                    <span id="processingLabel">Processing transmission...</span>
+                    <span class="processing-status" id="processingLabel">Processing transmission...</span>
+                    <span class="processing-elapsed"></span>
                 </div>
                 <div class="transcription-actions">
                     <button class="action-btn" id="copyBtn" title="Copy to clipboard (Ctrl+C)">
@@ -177,6 +178,20 @@
             <section class="pinned-section" id="pinnedSection" style="display:none;" aria-label="Pinned transcriptions">
                 <div class="pinned-header">
                     <h3>📌 Pinned</h3>
+                    <button class="history-select-btn" id="pinnedSelectBtn"
+                        title="Select pinned entries">Select</button>
+                </div>
+                <div class="pinned-bulk-bar hidden" id="pinnedBulkBar">
+                    <label class="bulk-select-all">
+                        <input type="checkbox" id="pinnedSelectAll"> Select all
+                    </label>
+                    <div class="bulk-actions">
+                        <button class="bulk-btn" id="pinnedBulkCopy" title="Copy selected">📋 Copy</button>
+                        <button class="bulk-btn" id="pinnedBulkExport" title="Export selected">📥 Export</button>
+                        <button class="bulk-btn danger" id="pinnedBulkUnpin" title="Unpin selected">📌 Unpin</button>
+                        <button class="bulk-btn danger" id="pinnedBulkDelete" title="Delete selected">🗑️
+                            Delete</button>
+                    </div>
                 </div>
                 <div class="pinned-list" id="pinnedList"></div>
             </section>
@@ -371,6 +386,22 @@
                             <option value="srt">Subtitles (.srt)</option>
                             <option value="vtt">WebVTT (.vtt)</option>
                         </select>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Export mode</span>
+                        <span class="setting-hint">Rich includes timestamps and speaker labels in Text/Markdown exports.
+                            Pure transcript exports clean text only — subtitle formats (SRT/VTT) are unavailable in this
+                            mode.</span>
+                        <select id="settExportMode" class="input">
+                            <option value="rich">Rich (timestamps + speakers)</option>
+                            <option value="pure">Pure transcript (text only)</option>
+                        </select>
+                    </label>
+                    <label class="setting">
+                        <span class="setting-label">Auto-export directory</span>
+                        <span class="setting-hint">Automatically save every transcription as a text file to this folder.
+                            Leave blank to disable.</span>
+                        <input type="text" id="settTranscriptDir" class="input" placeholder="~/Documents/transcripts/">
                     </label>
                 </div>
                 <div class="setting-group">

@@ -198,6 +198,9 @@
         el('settPort').value = window.location.port || '8090';
         el('settEnableTLS').checked = settings.enable_tls || false;
         el('settExportFormat').value = settings.default_export_format || 'txt';
+        el('settExportMode').value = settings.export_mode || 'rich';
+        el('settTranscriptDir').value = settings.transcript_dir || '';
+        el('settTranslateDir').value = settings.translate_dir || '';
     }
 
     function saveSettingsToServer() {
@@ -231,6 +234,17 @@
         settings.condition_on_previous_text = el('settConditionPrev').checked;
         settings.beam_size = parseInt(el('settBeamSize').value) || 5;
         settings.temperature = parseFloat(el('settTemperature').value) || 0;
+
+        // Export mode and auto-export directory
+        settings.export_mode = el('settExportMode').value || 'rich';
+        settings.transcript_dir = el('settTranscriptDir').value.trim();
+        settings.translate_dir = el('settTranslateDir').value.trim();
+
+        // Auto-switch default format if SRT/VTT selected but now in Pure mode
+        if (settings.export_mode === 'pure' && (settings.default_export_format === 'srt' || settings.default_export_format === 'vtt')) {
+            settings.default_export_format = 'txt';
+            el('settExportFormat').value = 'txt';
+        }
 
 
         updateHeaderTime();
@@ -578,7 +592,10 @@
 
     // --- Transcription ---
     async function transcribeAudio(audioBlob) {
-        showProcessing(true);
+        // Read translate toggle early — needed for processing message and endpoint selection
+        const translateMode = el('translateMode')?.checked || false;
+        const processingMsg = translateMode ? 'Translating → English…' : 'Transcribing…';
+        showProcessing(true, processingMsg);
         const formData = new FormData();
         formData.append('file', audioBlob, 'recording.webm');
         formData.append('response_format', 'json');
@@ -595,21 +612,33 @@
         if (settings.condition_on_previous_text === false) formData.append('condition_on_previous_text', 'false');
 
         // Translate mode: use translation endpoint instead of transcription
-        const translateMode = el('translateMode')?.checked || false;
         const endpoint = translateMode ? '/v1/audio/translations' : '/v1/audio/transcriptions';
 
         try {
-            const res = await fetch(endpoint, { method: 'POST', body: formData });
+            console.log(`Sending audio to ${endpoint}${translateMode ? ' (translate mode)' : ''}`);
+            // Abort after 90s to prevent infinite hang
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 90000);
+            let res;
+            try {
+                res = await fetch(endpoint, { method: 'POST', body: formData, signal: controller.signal });
+            } finally {
+                clearTimeout(timeoutId);
+            }
             if (!res.ok) {
                 let detail = '';
                 try {
                     const errBody = await res.text();
                     const errJson = JSON.parse(errBody);
                     detail = errJson.detail || errJson.error || errJson.message || errBody;
-                } catch { detail = await res.text().catch(() => ''); }
+                } catch {
+                    // JSON parse failed — errBody was already consumed above, don't re-read
+                    // detail stays empty, which is fine — the status hint covers it
+                }
                 const statusMessages = {
                     400: 'Bad request — the audio file may be corrupt, empty, or in an unsupported format.',
                     401: 'Unauthorized — check your auth token.',
+                    404: 'Endpoint not found — the Whisper backend may not support translation.',
                     413: 'File too large — try a shorter recording or smaller file.',
                     415: 'Unsupported format — try WAV, MP3, or FLAC.',
                     422: 'Processing error — the backend could not process this audio.',
@@ -621,7 +650,15 @@
                 const hint = statusMessages[res.status] || `HTTP ${res.status}`;
                 throw new Error(`${hint}${detail ? '\n\nBackend: ' + detail : ''}`);
             }
-            const data = await res.json();
+            let data;
+            try {
+                data = await res.json();
+            } catch (parseErr) {
+                // Backend returned non-JSON (common with translation endpoints)
+                const rawText = await res.text().catch(() => '');
+                console.error('Failed to parse response as JSON:', parseErr, 'Raw:', rawText);
+                throw new Error(`Backend returned invalid JSON. The Whisper server may not support this endpoint.\n\nRaw response: ${rawText.slice(0, 200)}`);
+            }
             let text = data.text || '';
 
             // Handle verbose_json with segments (word-level timestamps / speaker labels)
@@ -689,10 +726,12 @@
             }
         } catch (err) {
             console.error('Transcription error:', err);
-            const errMsg = err.message.replace(/\n/g, '<br>');
+            const isAbort = err.name === 'AbortError';
+            const msg = isAbort ? 'Request timed out after 90 seconds. The backend may be overloaded or the audio file is too large.' : err.message;
+            const errMsg = msg.replace(/\n/g, '<br>');
             const errorDiv = document.createElement('div');
             errorDiv.className = 'transcription-error';
-            errorDiv.innerHTML = `<strong>⚠️ Transcription Error</strong><br>${escapeHTML(errMsg)}`;
+            errorDiv.innerHTML = `<strong>⚠️ ${translateMode ? 'Translation' : 'Transcription'} Error</strong><br>${escapeHTML(errMsg)}`;
             transcriptionText.appendChild(errorDiv);
             placeholder.style.display = 'none';
         } finally {
@@ -742,9 +781,26 @@
         return div.innerHTML;
     }
 
-    function showProcessing(show) {
+    let processingTimer = null;
+    function showProcessing(show, message) {
         processing.classList.toggle('active', show);
         recordBtn.disabled = show;
+        // Update processing status text
+        const statusEl = processing.querySelector('.processing-status');
+        if (show && statusEl) {
+            statusEl.textContent = message || 'Processing…';
+            // Live elapsed timer
+            let elapsed = 0;
+            const timerEl = processing.querySelector('.processing-elapsed');
+            if (timerEl) timerEl.textContent = '0s';
+            clearInterval(processingTimer);
+            processingTimer = setInterval(() => {
+                elapsed++;
+                if (timerEl) timerEl.textContent = `${elapsed}s`;
+            }, 1000);
+        } else {
+            clearInterval(processingTimer);
+        }
     }
 
     // --- Transcription history (selectable log entries) ---
@@ -985,6 +1041,106 @@
         historySearch.addEventListener('input', () => renderHistory());
     }
 
+    // --- Pinned select mode ---
+    const pinnedSelectBtn = el('pinnedSelectBtn');
+    const pinnedBulkBar = el('pinnedBulkBar');
+    const pinnedListEl = document.getElementById('pinnedList');
+    const pinnedSelectAll = el('pinnedSelectAll');
+    let pinnedSelectMode = false;
+
+    if (pinnedSelectBtn) {
+        pinnedSelectBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            pinnedSelectMode = !pinnedSelectMode;
+            pinnedSelectBtn.classList.toggle('active', pinnedSelectMode);
+            pinnedSelectBtn.textContent = pinnedSelectMode ? 'Done' : 'Select';
+            pinnedBulkBar.classList.toggle('hidden', !pinnedSelectMode);
+            if (pinnedListEl) pinnedListEl.classList.toggle('select-mode', pinnedSelectMode);
+            if (pinnedSelectAll) pinnedSelectAll.checked = false;
+        });
+    }
+
+    if (pinnedSelectAll) {
+        pinnedSelectAll.addEventListener('change', () => {
+            if (!pinnedListEl) return;
+            const boxes = pinnedListEl.querySelectorAll('.log-entry-checkbox');
+            boxes.forEach(cb => {
+                cb.checked = pinnedSelectAll.checked;
+                cb.closest('.log-entry').classList.toggle('checked', pinnedSelectAll.checked);
+            });
+        });
+    }
+
+    function getPinnedSelectedIndices() {
+        if (!pinnedListEl) return [];
+        const boxes = pinnedListEl.querySelectorAll('.log-entry-checkbox:checked');
+        return Array.from(boxes).map(cb => parseInt(cb.dataset.check));
+    }
+
+    function exitPinnedSelectMode() {
+        pinnedSelectMode = false;
+        if (pinnedSelectBtn) { pinnedSelectBtn.classList.remove('active'); pinnedSelectBtn.textContent = 'Select'; }
+        if (pinnedBulkBar) pinnedBulkBar.classList.add('hidden');
+        if (pinnedListEl) pinnedListEl.classList.remove('select-mode');
+    }
+
+    // Pinned bulk Copy
+    const pinnedBulkCopyBtn = el('pinnedBulkCopy');
+    if (pinnedBulkCopyBtn) {
+        pinnedBulkCopyBtn.addEventListener('click', () => {
+            const indices = getPinnedSelectedIndices();
+            if (!indices.length) return;
+            const combined = indices.map(idx => logHistory[idx]?.text).filter(Boolean).join('\n\n---\n\n');
+            navigator.clipboard.writeText(combined).then(() => flashButton(pinnedBulkCopyBtn, `Copied ${indices.length}!`, 'success'));
+        });
+    }
+
+    // Pinned bulk Export
+    const pinnedBulkExportBtn = el('pinnedBulkExport');
+    if (pinnedBulkExportBtn) {
+        pinnedBulkExportBtn.addEventListener('click', () => {
+            const indices = getPinnedSelectedIndices();
+            if (!indices.length) return;
+            const combined = indices.map(idx => {
+                const entry = logHistory[idx];
+                if (!entry) return '';
+                const date = new Date(entry.timestamp);
+                return `## ${date.toLocaleString()}\n\n${entry.text}`;
+            }).filter(Boolean).join('\n\n---\n\n');
+            doExport(combined, [], getDefaultExportFormat(), `${settings.file_title || 'Dictation'}_pinned`);
+            flashButton(pinnedBulkExportBtn, `Exported ${indices.length}!`, 'success');
+        });
+    }
+
+    // Pinned bulk Unpin
+    const pinnedBulkUnpinBtn = el('pinnedBulkUnpin');
+    if (pinnedBulkUnpinBtn) {
+        pinnedBulkUnpinBtn.addEventListener('click', () => {
+            const indices = getPinnedSelectedIndices();
+            if (!indices.length) return;
+            indices.forEach(idx => { if (logHistory[idx]) logHistory[idx].pinned = false; });
+            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            renderHistory();
+            exitPinnedSelectMode();
+            flashButton(pinnedBulkUnpinBtn, `Unpinned ${indices.length}!`, 'success');
+        });
+    }
+
+    // Pinned bulk Delete
+    const pinnedBulkDeleteBtn = el('pinnedBulkDelete');
+    if (pinnedBulkDeleteBtn) {
+        pinnedBulkDeleteBtn.addEventListener('click', () => {
+            const indices = getPinnedSelectedIndices();
+            if (!indices.length) return;
+            if (!confirm(`Delete ${indices.length} pinned transcription${indices.length > 1 ? 's' : ''}? This cannot be undone.`)) return;
+            indices.sort((a, b) => b - a).forEach(idx => logHistory.splice(idx, 1));
+            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            renderHistory();
+            exitPinnedSelectMode();
+            flashButton(pinnedBulkDeleteBtn, `Deleted ${indices.length}!`, 'success');
+        });
+    }
+
     // History card interactions (shared handler for both lists)
     function handleEntryClick(e) {
         // Pin/unpin
@@ -1158,7 +1314,6 @@
 
     // Attach handler to both history lists
     historyList.addEventListener('click', handleEntryClick);
-    const pinnedListEl = document.getElementById('pinnedList');
     if (pinnedListEl) pinnedListEl.addEventListener('click', handleEntryClick);
 
     // Overflow keyboard navigation (both lists)
@@ -1205,6 +1360,26 @@
 
     function exportContent(text, segments, format) {
         const pureText = (text || '').replace(/<[^>]*>/g, '').trim();
+        const isRich = (settings.export_mode || 'rich') === 'rich';
+
+        // Build rich text from segments if available and Rich mode is active
+        function buildRichText() {
+            if (!isRich || !segments || segments.length === 0) return pureText;
+            return segments.map(seg => {
+                let line = '';
+                if (seg.speaker !== undefined && seg.speaker !== null) {
+                    line += `SPEAKER ${seg.speaker + 1}: `;
+                }
+                if (seg.start !== undefined) {
+                    const m = Math.floor(seg.start / 60);
+                    const s = Math.floor(seg.start % 60);
+                    line += `[${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}] `;
+                }
+                line += (seg.text || '').trim();
+                return line;
+            }).join('\n');
+        }
+
         switch (format) {
             case 'srt': return generateSRT(segments, pureText);
             case 'vtt': return 'WEBVTT\n\n' + generateVTT(segments, pureText);
@@ -1218,16 +1393,18 @@
                     obj.segments = segments.map(s => ({
                         start: s.start,
                         end: s.end,
-                        text: (s.text || '').trim()
+                        text: (s.text || '').trim(),
+                        ...(s.speaker !== undefined ? { speaker: s.speaker } : {})
                     }));
                 }
                 return JSON.stringify(obj, null, 2);
             }
             case 'md': {
                 const now = new Date();
-                return `---\ntitle: ${settings.file_title || 'Dictation'}\ndate: ${now.toISOString()}\ntags: [dictation]\n---\n\n${pureText}\n`;
+                const body = buildRichText();
+                return `---\ntitle: ${settings.file_title || 'Dictation'}\ndate: ${now.toISOString()}\ntags: [dictation]\n---\n\n${body}\n`;
             }
-            default: return pureText;
+            default: return buildRichText(); // txt
         }
     }
 
@@ -1256,7 +1433,20 @@
     function showExportAsDialog(text, segments, filenameBase) {
         pendingExportData = { text, segments, filenameBase };
         exportAsModal.classList.remove('hidden');
-        const firstBtn = exportFormatList.querySelector('[data-fmt]');
+
+        // Disable subtitle formats in Pure mode (no segment data to work with)
+        const isPure = settings.export_mode === 'pure';
+        const buttons = exportFormatList.querySelectorAll('[data-fmt]');
+        buttons.forEach(btn => {
+            const fmt = btn.dataset.fmt;
+            if (fmt === 'srt' || fmt === 'vtt') {
+                btn.disabled = isPure;
+                btn.title = isPure ? 'Subtitle formats require Rich export mode (timestamps)' : '';
+                btn.style.opacity = isPure ? '0.4' : '';
+            }
+        });
+
+        const firstBtn = exportFormatList.querySelector('[data-fmt]:not(:disabled)');
         if (firstBtn) firstBtn.focus();
     }
 

@@ -77,6 +77,9 @@ type runtimeSettings struct {
 	BeamSize                int     `json:"beam_size"`
 	Temperature             float64 `json:"temperature"`
 	ConditionOnPreviousText *bool   `json:"condition_on_previous_text"` // pointer to distinguish false from unset
+	ExportMode              string  `json:"export_mode"`               // "rich" or "pure"
+	TranscriptDir           string  `json:"transcript_dir"`            // auto-export directory for plain text files
+	TranslateDir            string  `json:"translate_dir"`             // auto-save directory for translation output
 }
 
 func main() {
@@ -548,6 +551,11 @@ func main() {
 			if update.ConditionOnPreviousText != nil {
 				settings.ConditionOnPreviousText = update.ConditionOnPreviousText
 			}
+			if update.ExportMode != "" {
+				settings.ExportMode = update.ExportMode
+			}
+			settings.TranscriptDir = update.TranscriptDir
+			settings.TranslateDir = update.TranslateDir
 			settings.mu.Unlock()
 
 			// Persist to file

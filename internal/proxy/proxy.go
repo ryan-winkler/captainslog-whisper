@@ -278,11 +278,29 @@ func (p *Proxy) Translate(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.client.Do(proxyReq)
 	if err != nil {
-		p.logger.Error("backend request failed", "error", err, "url", backendURL)
-		http.Error(w, `{"error": "translation backend unavailable"}`, http.StatusBadGateway)
+		p.logger.Error("translation backend request failed", "error", err, "url", backendURL)
+		http.Error(w, `{"error": "translation backend unavailable — is the Whisper server running and does it support /v1/audio/translations?"}`, http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+
+	// Log the response for debugging — critical for diagnosing "infinite processing"
+	p.logger.Info("translation proxied", "status", resp.StatusCode, "url", backendURL)
+
+	// If backend returned an error, log the body for debugging
+	if resp.StatusCode != http.StatusOK {
+		errBody, _ := io.ReadAll(resp.Body)
+		p.logger.Error("translation backend returned error", "status", resp.StatusCode, "body", string(errBody), "url", backendURL)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		// Forward the error body so the frontend can display it
+		if len(errBody) > 0 {
+			w.Write(errBody)
+		} else {
+			fmt.Fprintf(w, `{"error": "backend returned HTTP %d"}`, resp.StatusCode)
+		}
+		return
+	}
 
 	for k, v := range resp.Header {
 		for _, val := range v {

@@ -848,6 +848,12 @@ canvas {
     display: flex;
 }
 
+.processing-elapsed {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
 .spinner {
     width: 18px;
     height: 18px;
@@ -1007,7 +1013,7 @@ kbd {
     border-top: 1px solid var(--border);
 }
 
-/* Setting groups */
+/* Setting groups (legacy) */
 .setting-group {
     margin-bottom: 20px;
 }
@@ -1019,6 +1025,70 @@ kbd {
     margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+/* Collapsible setting domains (DDD-aligned) */
+.setting-domain {
+    margin-bottom: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.setting-domain>summary {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    cursor: pointer;
+    background: var(--bg-secondary);
+    user-select: none;
+    list-style: none;
+    transition: background 0.15s ease;
+}
+
+.setting-domain>summary::-webkit-details-marker {
+    display: none;
+}
+
+.setting-domain>summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+}
+
+.setting-domain[open]>summary::before {
+    transform: rotate(90deg);
+}
+
+.setting-domain>summary:hover {
+    background: var(--border);
+}
+
+.setting-domain>summary h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.setting-domain>.setting,
+.setting-domain>label {
+    padding: 0 14px;
+}
+
+.setting-domain>.setting:first-of-type,
+.setting-domain>label:first-of-type {
+    padding-top: 12px;
+}
+
+.setting-domain>.setting:last-child,
+.setting-domain>label:last-child {
+    padding-bottom: 14px;
 }
 
 .setting {
