@@ -5,6 +5,7 @@ package vault
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -132,8 +133,13 @@ func parseVaultFile(path string) (Entry, error) {
 		return Entry{}, err
 	}
 
-	// Extract body text — trim leading/trailing whitespace
-	body := strings.TrimSpace(strings.Join(bodyLines, "\n"))
+	// Extract body text — strip markdown formatting for clean preview
+	body := cleanMarkdown(strings.Join(bodyLines, "\n"))
+
+	// Skip empty files
+	if body == "" {
+		return Entry{}, fmt.Errorf("empty body")
+	}
 
 	// Cap text at 500 chars to match localStorage entries
 	if len(body) > 500 {
@@ -152,6 +158,37 @@ func parseVaultFile(path string) (Entry, error) {
 	entry.Timestamp = normalizeTimestamp(entry.Timestamp)
 
 	return entry, nil
+}
+
+// cleanMarkdown strips markdown formatting for clean history preview text.
+// Removes headers (#), horizontal rules (---), blockquotes (>), and collapses whitespace.
+func cleanMarkdown(text string) string {
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		// Skip empty lines, horizontal rules, and markdown headers
+		if trimmed == "" || trimmed == "---" {
+			continue
+		}
+		// Strip heading prefixes: # ## ### etc.
+		if strings.HasPrefix(trimmed, "#") {
+			trimmed = strings.TrimLeft(trimmed, "# ")
+			trimmed = strings.TrimSpace(trimmed)
+			if trimmed == "" {
+				continue
+			}
+		}
+		// Strip blockquote prefixes
+		if strings.HasPrefix(trimmed, "> ") {
+			trimmed = strings.TrimPrefix(trimmed, "> ")
+		}
+		// Strip emoji-only lines (like 🎙️ headers)
+		if len(trimmed) <= 4 {
+			continue
+		}
+		lines = append(lines, trimmed)
+	}
+	return strings.TrimSpace(strings.Join(lines, " "))
 }
 
 // normalizeTimestamp converts various date formats to ISO-8601.

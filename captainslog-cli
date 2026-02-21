@@ -17,7 +17,14 @@
 #   CAPTAINSLOG_URL   Base URL (default: http://127.0.0.1:8090)
 #   CAPTAINSLOG_TOKEN Auth token (optional)
 
+CLI_VERSION="0.2.0"
+
 set -euo pipefail
+
+# Default HTTP timeout (seconds) — prevents hanging on unresponsive servers
+CURL_TIMEOUT="${CAPTAINSLOG_TIMEOUT:-10}"
+# Transcription timeout is longer (large files take minutes)
+CURL_TRANSCRIBE_TIMEOUT="${CAPTAINSLOG_TRANSCRIBE_TIMEOUT:-600}"
 
 # Load settings from shared config file (same as web UI)
 CONFIG_DIR="${CAPTAINSLOG_CONFIG_DIR:-$HOME/.config/captainslog}"
@@ -46,7 +53,7 @@ case "$cmd" in
         format="${2:-text}"
         lang="${CAPTAINSLOG_LANGUAGE:-}"
 
-        args=(-s -X POST "${BASE_URL}/v1/audio/transcriptions")
+        args=(-s --max-time "$CURL_TRANSCRIBE_TIMEOUT" -X POST "${BASE_URL}/v1/audio/transcriptions")
         args+=(-F "file=@${file}")
         args+=(-F "response_format=${format}")
         [[ -n "$lang" ]] && args+=(-F "language=${lang}")
@@ -113,7 +120,7 @@ case "$cmd" in
         escaped=$(printf '%s' "$text" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e ':a' -e 'N' -e '$!ba' -e 's/\n/\\n/g' -e 's/\t/\\t/g')
         payload="{\"text\":\"${escaped}\",\"language\":\"${lang}\"}"
 
-        args=(-s -X POST "${BASE_URL}/api/vault/save" -H "Content-Type: application/json" -d "$payload")
+        args=(-s --max-time "$CURL_TIMEOUT" -X POST "${BASE_URL}/api/vault/save" -H "Content-Type: application/json" -d "$payload")
         [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
 
         curl "${args[@]}" 2>/dev/null
@@ -121,7 +128,7 @@ case "$cmd" in
         ;;
 
     stardate|sd)
-        data=$(curl -s "${BASE_URL}/api/stardate" 2>/dev/null)
+        data=$(curl -s --max-time "$CURL_TIMEOUT" "${BASE_URL}/api/stardate" 2>/dev/null)
         if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
             echo "$data"
         else
@@ -136,17 +143,17 @@ case "$cmd" in
         ;;
 
     health|h)
-        curl -s "${BASE_URL}/healthz" 2>/dev/null
+        curl -s --max-time "$CURL_TIMEOUT" "${BASE_URL}/healthz" 2>/dev/null
         echo
         ;;
 
     settings|config)
         if [[ $# -eq 0 ]]; then
-            curl -s "${BASE_URL}/api/settings" 2>/dev/null
+            curl -s --max-time "$CURL_TIMEOUT" "${BASE_URL}/api/settings" 2>/dev/null
             echo
         elif [[ $# -eq 1 ]]; then
             key="$1"
-            data=$(curl -s "${BASE_URL}/api/settings" 2>/dev/null)
+            data=$(curl -s --max-time "$CURL_TIMEOUT" "${BASE_URL}/api/settings" 2>/dev/null)
             # Extract key value with sed
             value=$(echo "$data" | sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^,\"}\]*\)\"\{0,1\}.*/\1/p" 2>/dev/null)
             echo "${value:-not found}"
@@ -154,11 +161,18 @@ case "$cmd" in
             key="$1"
             value="$2"
             if [[ "$value" == "true" || "$value" == "false" ]]; then
+                # Boolean: send as JSON boolean
+                payload="{\"$key\": $value}"
+            elif [[ "$value" =~ ^[0-9]+$ ]]; then
+                # Integer: send as JSON number
+                payload="{\"$key\": $value}"
+            elif [[ "$value" =~ ^[0-9]*\.[0-9]+$ ]]; then
+                # Float: send as JSON number
                 payload="{\"$key\": $value}"
             else
                 payload="{\"$key\": \"$value\"}"
             fi
-            args=(-s -X PUT "${BASE_URL}/api/settings" -H "Content-Type: application/json" -d "$payload")
+            args=(-s --max-time "$CURL_TIMEOUT" -X PUT "${BASE_URL}/api/settings" -H "Content-Type: application/json" -d "$payload")
             [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
             curl "${args[@]}" 2>/dev/null
             echo
@@ -166,9 +180,100 @@ case "$cmd" in
         ;;
 
     models|m)
-        data=$(curl -s "${BASE_URL}/api/models" 2>/dev/null)
+        data=$(curl -s --max-time "$CURL_TIMEOUT" "${BASE_URL}/api/models" 2>/dev/null)
         echo "Whisper models:"
         echo "$data" | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/  \1/p' | head -20 2>/dev/null || echo "  (could not parse)"
+        ;;
+
+    history|hist)
+        # List recent transcription history from the vault
+        args=(-s --max-time "$CURL_TIMEOUT" "${BASE_URL}/api/history")
+        [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
+        data=$(curl "${args[@]}" 2>/dev/null)
+
+        if [[ "${1:-}" == "--json" || "${1:-}" == "-j" ]]; then
+            echo "$data"
+        else
+            # Extract titles and dates for human-readable display
+            count=$(echo "$data" | sed -n 's/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | wc -l)
+            if [[ "$count" -eq 0 ]]; then
+                echo "No history entries found."
+                echo "  Set a vault directory: captainslog-cli settings vault_dir ~/Documents/Vault/Dictation"
+            else
+                echo "Recent transcriptions ($count):"
+                # Show title and date for each entry
+                echo "$data" | sed -n 's/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/  \1/p' | head -20
+            fi
+        fi
+        ;;
+
+    translate|tr)
+        # Translate audio/video file to English via Whisper
+        file="${1:-}"
+        if [[ -z "$file" || ! -f "$file" ]]; then
+            echo "Usage: captainslog-cli translate <file>" >&2
+            echo "  Translates audio to English text" >&2
+            exit 1
+        fi
+        format="${2:-text}"
+
+        args=(-s --max-time "$CURL_TRANSCRIBE_TIMEOUT" -X POST "${BASE_URL}/v1/audio/translations")
+        args+=(-F "file=@${file}")
+        args+=(-F "response_format=${format}")
+        [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
+
+        result=$(curl "${args[@]}" 2>/dev/null)
+
+        if [[ "$format" == "text" ]]; then
+            text=$(echo "$result" | sed -n 's/.*"text"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+            if [[ -n "$text" ]]; then
+                echo "$text"
+            else
+                echo "$result"
+            fi
+        else
+            echo "$result"
+        fi
+        ;;
+
+    open|o)
+        # Open vault, recordings, or config directory in file manager
+        target="${1:-vault}"
+        case "$target" in
+            vault)
+                data=$(curl -s --max-time "$CURL_TIMEOUT" "${BASE_URL}/api/settings" 2>/dev/null)
+                dir=$(echo "$data" | sed -n 's/.*"vault_dir"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+                if [[ -z "$dir" ]]; then
+                    echo "Vault directory not configured. Set it:" >&2
+                    echo "  captainslog-cli settings vault_dir ~/Documents/Vault/Dictation" >&2
+                    exit 1
+                fi
+                ;;
+            recordings|rec)
+                dir="${CAPTAINSLOG_CONFIG_DIR:-$HOME/.config/captainslog}/recordings"
+                ;;
+            config|cfg)
+                dir="${CAPTAINSLOG_CONFIG_DIR:-$HOME/.config/captainslog}"
+                ;;
+            *)
+                echo "Usage: captainslog-cli open [vault|recordings|config]" >&2
+                exit 1
+                ;;
+        esac
+
+        if [[ ! -d "$dir" ]]; then
+            echo "Directory not found: $dir" >&2
+            exit 1
+        fi
+
+        if command -v xdg-open &>/dev/null; then
+            xdg-open "$dir" &
+        elif command -v open &>/dev/null; then
+            open "$dir"
+        else
+            echo "$dir"
+        fi
+        echo "Opened: $dir"
         ;;
 
     update)
@@ -201,7 +306,7 @@ case "$cmd" in
         echo ""
         # Check server
         printf "Server (%s)... " "$BASE_URL"
-        if health=$(curl -sf "${BASE_URL}/healthz?diag" 2>/dev/null); then
+        if health=$(curl -sf --max-time "$CURL_TIMEOUT" "${BASE_URL}/healthz?diag" 2>/dev/null); then
             echo "✅ reachable"
             # Parse diagnostics
             whisper_status=$(echo "$health" | sed -n 's/.*"whisper"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
@@ -212,13 +317,16 @@ case "$cmd" in
                 echo "❌ $whisper_status"
                 echo "  Fix: Ensure faster-whisper is running (docker/podman)"
             fi
-            # Ollama
-            ollama_status=$(echo "$health" | sed -n 's/.*"ollama"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-            printf "Ollama... "
-            if [[ "$ollama_status" == "enabled" ]]; then
-                echo "✅ enabled"
+            # LLM (Ollama, LM Studio, etc.)
+            llm_status=$(echo "$health" | sed -n 's/.*"llm"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            printf "Local LLM... "
+            if [[ "$llm_status" == "connected" ]]; then
+                echo "✅ connected"
+            elif [[ "$llm_status" == "disabled" ]]; then
+                echo "ℹ️  disabled (set CAPTAINSLOG_ENABLE_LLM=true)"
             else
-                echo "ℹ️  disabled (set CAPTAINSLOG_ENABLE_OLLAMA=true)"
+                echo "❌ ${llm_status:-unknown}"
+                echo "  Fix: Ensure Ollama/LM Studio is running"
             fi
             # Vault
             vault_status=$(echo "$health" | sed -n 's/.*"vault"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p')
@@ -264,9 +372,125 @@ case "$cmd" in
         ;;
 
     version|--version|-v)
-        data=$(curl -s "${BASE_URL}/healthz" 2>/dev/null)
+        # Embedded CLI version — works offline
+        echo "captainslog-cli $CLI_VERSION"
+        # If server is reachable, also show server version
+        data=$(curl -s --max-time 3 "${BASE_URL}/healthz" 2>/dev/null)
         ver=$(echo "$data" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
-        echo "captainslog-cli (server: ${ver:-unreachable})"
+        if [[ -n "$ver" ]]; then
+            echo "captainslog server $ver"
+        fi
+        ;;
+
+    completions)
+        # Generate shell completions for zsh/bash
+        shell="${1:-zsh}"
+        case "$shell" in
+            zsh)
+                cat <<'ZSHCOMP'
+#compdef captainslog-cli
+
+_captainslog-cli() {
+    local -a commands
+    commands=(
+        'transcribe:Transcribe audio/video file'
+        'translate:Translate audio to English'
+        'copy:Copy text to clipboard'
+        'save:Save text to vault'
+        'stardate:Print current stardate'
+        'health:Check backend status'
+        'history:List recent transcriptions'
+        'diagnose:Self-diagnose all services'
+        'settings:View or update settings'
+        'models:List available models'
+        'open:Open vault/recordings/config folder'
+        'update:Pull latest and rebuild'
+        'version:Print version'
+        'completions:Generate shell completions'
+        'help:Show help'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe 'command' commands
+    else
+        case ${words[2]} in
+            transcribe|translate|t|tr)
+                _files -g '*.{mp3,wav,m4a,flac,ogg,webm,mp4,mkv,avi}'
+                ;;
+            settings|config)
+                if (( CURRENT == 3 )); then
+                    local -a keys
+                    keys=(
+                        'vault_dir' 'download_dir' 'language' 'model'
+                        'auto_save' 'auto_copy' 'prompt' 'vad_filter'
+                        'diarize' 'show_stardates' 'date_format' 'file_title'
+                        'whisper_url' 'llm_url' 'llm_model' 'enable_llm'
+                        'access_log' 'time_format' 'history_limit' 'stream_url'
+                        'enable_tls' 'default_export_format' 'word_timestamps'
+                        'beam_size' 'temperature' 'export_mode' 'transcript_dir'
+                        'translate_dir' 'watch_dir'
+                    )
+                    _describe 'setting' keys
+                fi
+                ;;
+            open|o)
+                local -a targets
+                targets=('vault' 'recordings' 'config')
+                _describe 'target' targets
+                ;;
+            completions)
+                local -a shells
+                shells=('zsh' 'bash')
+                _describe 'shell' shells
+                ;;
+        esac
+    fi
+}
+
+_captainslog-cli
+ZSHCOMP
+                ;;
+            bash)
+                cat <<'BASHCOMP'
+_captainslog_cli() {
+    local cur prev commands
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    commands="transcribe translate copy save stardate health history diagnose settings models open update version completions help"
+
+    if [[ ${COMP_CWORD} -eq 1 ]]; then
+        COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
+    elif [[ ${COMP_CWORD} -eq 2 ]]; then
+        case "${prev}" in
+            transcribe|translate|t|tr)
+                COMPREPLY=($(compgen -f -- "${cur}"))
+                ;;
+            settings|config)
+                local keys="vault_dir download_dir language model auto_save auto_copy prompt vad_filter diarize show_stardates date_format file_title whisper_url llm_url llm_model enable_llm access_log time_format history_limit stream_url enable_tls default_export_format word_timestamps beam_size temperature export_mode transcript_dir translate_dir watch_dir"
+                COMPREPLY=($(compgen -W "${keys}" -- "${cur}"))
+                ;;
+            open|o)
+                COMPREPLY=($(compgen -W "vault recordings config" -- "${cur}"))
+                ;;
+            completions)
+                COMPREPLY=($(compgen -W "zsh bash" -- "${cur}"))
+                ;;
+        esac
+    fi
+}
+complete -F _captainslog_cli captainslog-cli
+BASHCOMP
+                ;;
+            *)
+                echo "Usage: captainslog-cli completions [zsh|bash]" >&2
+                echo "" >&2
+                echo "Install:" >&2
+                echo "  zsh:  captainslog-cli completions zsh > ~/.zsh/completions/_captainslog-cli" >&2
+                echo "  bash: captainslog-cli completions bash >> ~/.bashrc" >&2
+                exit 1
+                ;;
+        esac
         ;;
 
     help|--help|-h|"")
@@ -275,28 +499,39 @@ case "$cmd" in
 
 Usage:
   captainslog-cli transcribe <file> [format]   Transcribe file (text|json|srt|vtt)
+  captainslog-cli translate <file> [format]    Translate audio to English
   captainslog-cli copy <text>                  Copy to clipboard (wl-copy/xclip)
   captainslog-cli save <text>                  Save to Obsidian vault
   captainslog-cli stardate [-j]                Current stardate (--json for full)
+  captainslog-cli history [-j]                 List recent transcriptions
   captainslog-cli health                       Backend status
   captainslog-cli diagnose                     Self-diagnose (check all services)
   captainslog-cli settings [key] [value]       View/update settings
   captainslog-cli models                       List available models
+  captainslog-cli open [vault|recordings|config]  Open folder in file manager
   captainslog-cli update                       Pull latest + rebuild + install
-  captainslog-cli version                      Server version
+  captainslog-cli version                      CLI + server version
+  captainslog-cli completions [zsh|bash]       Generate shell completions
 
 Examples:
   captainslog-cli transcribe meeting.mp3
+  captainslog-cli translate french-audio.mp3
   captainslog-cli save "Meeting notes from standup"
   echo "dictated text" | captainslog-cli save
   captainslog-cli settings language fr
-  captainslog-cli update
+  captainslog-cli settings beam_size 5
+  captainslog-cli open vault
+  captainslog-cli history --json | jq '.[0].title'
+  captainslog-cli completions zsh > ~/.zsh/completions/_captainslog-cli
 
 Environment:
-  CAPTAINSLOG_URL      API base URL (default: http://127.0.0.1:8090)
-  CAPTAINSLOG_TOKEN    Auth token (if server requires auth)
-  CAPTAINSLOG_LANGUAGE Default language for transcription
-  CAPTAINSLOG_REPO     Repo path for update (default: ~/code/captainslog-whisper)
+  CAPTAINSLOG_URL                API base URL (default: http://127.0.0.1:8090)
+  CAPTAINSLOG_TOKEN              Auth token (if server requires auth)
+  CAPTAINSLOG_LANGUAGE           Default language for transcription
+  CAPTAINSLOG_REPO               Repo path for update (default: ~/code/captainslog-whisper)
+  CAPTAINSLOG_TIMEOUT            HTTP timeout in seconds (default: 10)
+  CAPTAINSLOG_TRANSCRIBE_TIMEOUT Transcription timeout in seconds (default: 600)
+  CAPTAINSLOG_CONFIG_DIR         Config directory (default: ~/.config/captainslog)
 
 No external dependencies — pure bash + curl.
 EOF

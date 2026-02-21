@@ -979,7 +979,9 @@
             entry.stardate = stardateDisplay.textContent.replace('Stardate ', '');
         }
         logHistory.unshift(entry);
-        if (logHistory.length > 50) logHistory = logHistory.slice(0, 50);
+        // Cap localStorage entries at 200 to match server-side scan limit.
+        // Filesystem entries are re-hydrated on load, so this only trims the oldest.
+        if (logHistory.length > 200) logHistory = logHistory.slice(0, 200);
         persistHistory();
         renderHistory();
     }
@@ -1042,7 +1044,9 @@
         else if (settings.time_format === '24h') timeOpts.hour12 = false;
         const timeStr = time.toLocaleTimeString([], timeOpts);
         const dateStr = time.toLocaleDateString([], { month: 'short', day: 'numeric' });
-        const preview = entry.text.length > 120 ? entry.text.substring(0, 120) + '…' : entry.text;
+        // Strip any HTML tags and trim for clean preview
+        const cleanText = entry.text.replace(/<[^>]*>/g, '').trim();
+        const preview = cleanText.length > 120 ? cleanText.substring(0, 120) + '…' : cleanText;
         const stardate = entry.stardate ? `<span class="log-entry-stardate">SD ${entry.stardate}</span>` : '';
         const isPinned = entry.pinned;
 

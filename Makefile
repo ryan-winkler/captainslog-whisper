@@ -18,7 +18,7 @@ run: build
 	./captainslog
 
 service:
-	cp examples/captainslog.service $(HOME)/.config/systemd/user/catpainslog.service
+	cp examples/captainslog.service $(HOME)/.config/systemd/user/captainslog.service
 	systemctl --user daemon-reload
 	systemctl --user enable --now captainslog
 	@echo "Service enabled and started"
