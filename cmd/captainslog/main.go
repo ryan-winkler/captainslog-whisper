@@ -567,6 +567,36 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"file": file, "status": "saved"})
 	}))
 
+	// --- Vault history scan ---
+	mux.HandleFunc("/api/history", withAuth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			httputil.Error(w, r, logger, http.StatusMethodNotAllowed, "method not allowed",
+				"WHY: /api/history is GET only — reads vault directory")
+			return
+		}
+		settings.mu.RLock()
+		dir := settings.VaultDir
+		settings.mu.RUnlock()
+
+		if dir == "" {
+			// No vault configured — return empty array (not an error)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("[]"))
+			return
+		}
+
+		entries, err := vault.Scan(dir, 200)
+		if err != nil {
+			logger.Warn("vault scan failed", "dir", dir, "error", err)
+			// Graceful degradation — return empty array on error
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte("[]"))
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(entries)
+	}))
 	// --- Stardate API ---
 	mux.HandleFunc("/api/stardate", func(w http.ResponseWriter, r *http.Request) {
 		now := time.Now()

@@ -151,8 +151,56 @@
     checkHealth();
     setInterval(checkHealth, 30000);
 
+    // Hydrate history from vault directory — filesystem is source of truth.
+    // localStorage enriches with UI-only state (pinned, notes, segments).
+    hydrateFromServer();
+
     // Flush debounced history on page unload to prevent data loss
     window.addEventListener('beforeunload', () => persistHistoryNow());
+
+    function hydrateFromServer() {
+        fetch('/api/history').then(r => r.json()).then(serverEntries => {
+            if (!Array.isArray(serverEntries) || serverEntries.length === 0) return;
+
+            // Build lookup of existing entries by vault_file path
+            const existing = new Map();
+            logHistory.forEach((e, i) => {
+                if (e.vault_file) existing.set(e.vault_file, i);
+            });
+
+            let added = 0;
+            serverEntries.forEach(se => {
+                if (!se.vault_file || !se.text) return;
+
+                if (existing.has(se.vault_file)) {
+                    // Entry exists in localStorage — preserve UI-only state,
+                    // but update text from filesystem (source of truth)
+                    const idx = existing.get(se.vault_file);
+                    logHistory[idx].text = se.text;
+                    if (se.language && !logHistory[idx].language) logHistory[idx].language = se.language;
+                } else {
+                    // New entry from filesystem — not in localStorage
+                    logHistory.push({
+                        text: se.text,
+                        language: se.language || '',
+                        timestamp: se.timestamp || new Date().toISOString(),
+                        vault_file: se.vault_file,
+                        title: se.title || '',
+                        recording: null,
+                        pinned: false
+                    });
+                    added++;
+                }
+            });
+
+            if (added > 0) {
+                // Sort by timestamp (newest first) and persist
+                logHistory.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+                persistHistory();
+                renderHistory();
+            }
+        }).catch(() => { /* Graceful degradation — localStorage-only fallback */ });
+    }
 
     // --- Header time (stardate or normal clock) ---
     function updateHeaderTime() {
