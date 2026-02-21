@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"embed"
@@ -18,6 +19,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"os/exec"
@@ -37,6 +39,7 @@ import (
 	"github.com/ryan-winkler/captainslog-whisper/internal/stardate"
 	localtls "github.com/ryan-winkler/captainslog-whisper/internal/tls"
 	"github.com/ryan-winkler/captainslog-whisper/internal/vault"
+	"github.com/ryan-winkler/captainslog-whisper/internal/watcher"
 
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -80,6 +83,7 @@ type runtimeSettings struct {
 	ExportMode              string  `json:"export_mode"`               // "rich" or "pure"
 	TranscriptDir           string  `json:"transcript_dir"`            // auto-export directory for plain text files
 	TranslateDir            string  `json:"translate_dir"`             // auto-save directory for translation output
+	WatchDir                string  `json:"watch_dir"`                 // folder watcher: auto-transcribe new audio files
 }
 
 func main() {
@@ -408,6 +412,114 @@ func main() {
 	// --- OpenAI-compatible API ---
 	mux.HandleFunc("/v1/audio/transcriptions", withAuth(whisperProxy.Transcribe))
 	mux.HandleFunc("/v1/audio/translations", withAuth(whisperProxy.Translate))
+
+	// --- URL transcription (yt-dlp powered) ---
+	// Accepts {"url": "https://..."} and downloads audio via yt-dlp, then transcribes.
+	// Matches Buzz/Whishper/Vibe feature set for URL-based transcription.
+	mux.HandleFunc("/api/transcribe-url", withAuth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			httputil.Error(w, r, logger, http.StatusMethodNotAllowed, "method not allowed",
+				"WHY: /api/transcribe-url only accepts POST with JSON body")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1MB limit for request body
+
+		var req struct {
+			URL      string `json:"url"`
+			Language string `json:"language,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.URL == "" {
+			httputil.Error(w, r, logger, http.StatusBadRequest, "missing url",
+				"WHY: JSON body must contain 'url' field")
+			return
+		}
+
+		logger.Info("url transcription requested", "url", req.URL)
+
+		// Download audio via yt-dlp to a temp file
+		tmpDir, err := os.MkdirTemp("", "captainslog-url-*")
+		if err != nil {
+			httputil.ServerError(w, r, logger, "temp dir failed", "WHY: os.MkdirTemp failed", err)
+			return
+		}
+		defer os.RemoveAll(tmpDir)
+
+		outPath := filepath.Join(tmpDir, "audio.wav")
+		// WHY wav + ar 16000? Whisper expects 16kHz mono audio. yt-dlp + ffmpeg
+		// handles the conversion, avoiding any format compatibility issues.
+		cmd := exec.CommandContext(r.Context(), "yt-dlp",
+			"--no-playlist",
+			"--extract-audio",
+			"--audio-format", "wav",
+			"--postprocessor-args", "ffmpeg:-ar 16000 -ac 1",
+			"-o", outPath,
+			req.URL,
+		)
+		cmdOut, err := cmd.CombinedOutput()
+		if err != nil {
+			errMsg := string(cmdOut)
+			if len(errMsg) > 500 {
+				errMsg = errMsg[:500]
+			}
+			logger.Error("yt-dlp failed", "error", err, "output", errMsg)
+			httputil.Error(w, r, logger, http.StatusBadRequest,
+				fmt.Sprintf("yt-dlp failed: %s", errMsg),
+				"WHY: yt-dlp could not download audio from the URL — check URL validity and yt-dlp installation")
+			return
+		}
+
+		// Read the downloaded audio
+		audioData, err := os.ReadFile(outPath)
+		if err != nil {
+			httputil.ServerError(w, r, logger, "read audio failed", "WHY: os.ReadFile on yt-dlp output failed", err)
+			return
+		}
+
+		logger.Info("audio downloaded", "url", req.URL, "size_mb", len(audioData)/(1024*1024))
+
+		// Send to Whisper backend via multipart
+		var buf bytes.Buffer
+		mpWriter := multipart.NewWriter(&buf)
+		part, _ := mpWriter.CreateFormFile("file", "audio.wav")
+		part.Write(audioData)
+		mpWriter.WriteField("response_format", "json")
+		lang := req.Language
+		if lang == "" {
+			settings.mu.RLock()
+			lang = settings.Language
+			settings.mu.RUnlock()
+		}
+		if lang != "" && lang != "und" {
+			mpWriter.WriteField("language", lang)
+		}
+		mpWriter.Close()
+
+		whisperReq, _ := http.NewRequestWithContext(r.Context(), http.MethodPost,
+			cfg.WhisperURL+"/v1/audio/transcriptions", &buf)
+		whisperReq.Header.Set("Content-Type", mpWriter.FormDataContentType())
+
+		client := &http.Client{Timeout: 600 * time.Second}
+		resp, err := client.Do(whisperReq)
+		if err != nil {
+			httputil.ServerError(w, r, logger, "whisper request failed",
+				"WHY: HTTP request to Whisper backend failed", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			httputil.Error(w, r, logger, resp.StatusCode,
+				fmt.Sprintf("whisper error: %s", string(body)),
+				"WHY: Whisper backend returned non-200 status")
+			return
+		}
+
+		// Forward the Whisper response directly
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, resp.Body)
+		logger.Info("url transcription complete", "url", req.URL)
+	}))
 
 	// --- Vault save ---
 	mux.HandleFunc("/api/vault/save", withAuth(func(w http.ResponseWriter, r *http.Request) {
@@ -996,6 +1108,22 @@ func main() {
 	// journalctl and docker logs capture stdout by default.
 	fmt.Fprintf(os.Stdout, "\n  🖖 Captain's Log v%s\n  → Stardate %s\n  → %s://%s\n  → API: %s://%s/v1/audio/transcriptions\n\n", version, sd, proto, cfg.ListenAddr(), proto, cfg.ListenAddr())
 
+	// --- Folder watcher (auto-transcribe new audio files) ---
+	var fw *watcher.Watcher
+	settings.mu.RLock()
+	watchDir := settings.WatchDir
+	settings.mu.RUnlock()
+	if watchDir != "" {
+		fw = watcher.New(watchDir, cfg.WhisperURL, settings.VaultDir, settings.Language, logger)
+		if err := fw.Start(); err != nil {
+			logger.Error("folder watcher failed to start", "error", err, "dir", watchDir)
+		} else {
+			logger.Info("folder watcher active", "dir", watchDir)
+			// SSE endpoint for watcher events
+			mux.HandleFunc("/api/watcher/events", withAuth(fw.SSEHandler()))
+		}
+	}
+
 	// Graceful shutdown
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -1017,6 +1145,9 @@ func main() {
 
 	<-stop
 	logger.Info("shutting down gracefully...")
+	if fw != nil {
+		fw.Stop()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {

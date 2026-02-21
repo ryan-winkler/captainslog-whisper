@@ -94,6 +94,11 @@
                     <p>Drop audio/video file here or <button class="link-btn" id="browseBtn">browse</button></p>
                     <span class="file-types">wav · mp3 · mp4 · m4a · ogg · flac · webm</span>
                 </div>
+                <div class="url-input-row" id="urlInputRow">
+                    <input type="url" id="urlInput" class="input" placeholder="Paste YouTube or podcast URL…"
+                        aria-label="URL to transcribe">
+                    <button class="action-btn" id="urlTranscribeBtn" title="Transcribe from URL">🔗 Transcribe</button>
+                </div>
                 <div class="shortcuts-hint" aria-label="Keyboard shortcuts">
                     <span><kbd>Space</kbd> Record</span>
                     <span><kbd>Ctrl</kbd>+<kbd>C</kbd> Copy</span>
@@ -282,7 +287,15 @@
                         </div>
                     </label>
                     <label class="setting">
-                        <span class="setting-label">Date format</span>
+                        <span class="setting-label">📁 Watch folder</span>
+                        <span class="setting-hint">Drop audio files here for automatic transcription. New files are
+                            transcribed and saved to your vault. Requires server restart.</span>
+                        <div class="setting-input-row">
+                            <input type="text" id="settWatchDir" class="input" placeholder="~/Music/Recordings">
+                            <button class="btn-icon" data-open-dir="settWatchDir" title="Open folder">📂</button>
+                        </div>
+                    </label>
+                    <label class="setting">
                         <span class="setting-hint">Go time format for file names (default: 2006-01-02)</span>
                         <select id="settDateFormat" class="input">
                             <option value="2006-01-02">2006-01-02 (ISO)</option>
@@ -547,6 +560,58 @@
         </div>
     </div>
 
+    <!-- Subtitle Editor Modal -->
+    <div class="modal-overlay hidden" id="subtitleEditorModal" role="dialog" aria-modal="true"
+        aria-label="Subtitle Editor">
+        <div class="modal subtitle-editor-modal">
+            <div class="modal-header">
+                <h2>✍️ Subtitle Editor</h2>
+                <div class="editor-toolbar">
+                    <button class="action-btn" id="editorUndo" title="Undo (Ctrl+Z)">↩ Undo</button>
+                    <button class="action-btn" id="editorInsert" title="Insert segment at end">+ Insert</button>
+                    <div class="dropdown">
+                        <button class="action-btn" id="editorExport">📥 Export</button>
+                        <div class="dropdown-menu" id="editorExportMenu" style="display:none;">
+                            <button data-editor-fmt="srt">SRT</button>
+                            <button data-editor-fmt="vtt">VTT</button>
+                            <button data-editor-fmt="json">JSON</button>
+                            <button data-editor-fmt="txt">Text</button>
+                        </div>
+                    </div>
+                    <button class="action-btn success" id="editorSave" title="Save (Ctrl+S)">💾 Save</button>
+                </div>
+                <button class="modal-close" id="editorClose" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body editor-body">
+                <div class="editor-player" id="editorPlayer">
+                    <audio id="editorAudio" controls class="player-audio"></audio>
+                    <select id="editorSpeed" class="speed-select" title="Playback speed">
+                        <option value="0.5">0.5×</option>
+                        <option value="0.75">0.75×</option>
+                        <option value="1" selected>1×</option>
+                        <option value="1.25">1.25×</option>
+                        <option value="1.5">1.5×</option>
+                        <option value="2">2×</option>
+                    </select>
+                </div>
+                <div class="editor-table-wrap">
+                    <table class="editor-table" id="editorTable">
+                        <thead>
+                            <tr>
+                                <th class="col-idx">#</th>
+                                <th class="col-time">Start</th>
+                                <th class="col-time">End</th>
+                                <th class="col-text">Text</th>
+                                <th class="col-cps">CPS</th>
+                                <th class="col-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="editorTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
     <script src="app.js"></script>
 </body>
 

@@ -86,6 +86,7 @@
     const defaults = {
         vault_dir: '',
         download_dir: '',
+        watch_dir: '',
         language: 'en',
         model: 'large-v3',
         auto_save: false,
@@ -206,6 +207,7 @@
         el('settExportMode').value = settings.export_mode || 'rich';
         el('settTranscriptDir').value = settings.transcript_dir || '';
         el('settTranslateDir').value = settings.translate_dir || '';
+        el('settWatchDir').value = settings.watch_dir || '';
     }
 
     function saveSettingsToServer() {
@@ -244,6 +246,7 @@
         settings.export_mode = el('settExportMode').value || 'rich';
         settings.transcript_dir = el('settTranscriptDir').value.trim();
         settings.translate_dir = el('settTranslateDir').value.trim();
+        settings.watch_dir = el('settWatchDir').value.trim();
 
         // Auto-switch default format if SRT/VTT selected but now in Pure mode
         if (settings.export_mode === 'pure' && (settings.default_export_format === 'srt' || settings.default_export_format === 'vtt')) {
@@ -969,6 +972,10 @@
         // Overflow menu (⋮)
         let menuItems = '';
         menuItems += `<button role="menuitem" class="overflow-item" data-export-as="${origIndex}">📥 Export As…</button>`;
+        if (entry.segments && entry.segments.length > 0) {
+            menuItems += `<button role="menuitem" class="overflow-item" data-edit-subs="${origIndex}">✍️ Edit Subtitles</button>`;
+        }
+        menuItems += `<button role="menuitem" class="overflow-item" data-toggle-notes="${origIndex}">📝 Notes</button>`;
         if (entry.recording) {
             menuItems += `<button role="menuitem" class="overflow-item" data-goto-audio="${entry.recording}">📂 Open audio folder</button>`;
         }
@@ -1314,6 +1321,49 @@
             const idx = parseInt(exportAsEntry.dataset.exportAs);
             if (logHistory[idx]) {
                 showExportAsDialog(logHistory[idx].text, logHistory[idx].segments || []);
+            }
+            return;
+        }
+
+        // Edit Subtitles from overflow
+        const editSubsBtn = e.target.closest('[data-edit-subs]');
+        if (editSubsBtn) {
+            e.stopPropagation();
+            closeAllOverflows();
+            const idx = parseInt(editSubsBtn.dataset.editSubs);
+            const entry = logHistory[idx];
+            if (entry && entry.segments) {
+                openEditor(entry.segments, entry.recording, idx);
+            }
+            return;
+        }
+
+        // Toggle Notes from overflow
+        const notesBtn = e.target.closest('[data-toggle-notes]');
+        if (notesBtn) {
+            e.stopPropagation();
+            closeAllOverflows();
+            const idx = parseInt(notesBtn.dataset.toggleNotes);
+            const entryEl = document.querySelector(`.log-entry[data-index="${idx}"]`);
+            if (!entryEl) return;
+            let notesWrap = entryEl.querySelector('.entry-notes');
+            if (notesWrap) {
+                notesWrap.remove(); // Toggle off
+            } else {
+                notesWrap = document.createElement('div');
+                notesWrap.className = 'entry-notes';
+                const ta = document.createElement('textarea');
+                ta.className = 'notes-textarea';
+                ta.placeholder = 'Add notes about this recording…';
+                ta.value = logHistory[idx]?.notes || '';
+                ta.rows = 3;
+                ta.addEventListener('input', () => {
+                    logHistory[idx].notes = ta.value;
+                    localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+                });
+                notesWrap.appendChild(ta);
+                entryEl.querySelector('.log-entry-body')?.appendChild(notesWrap);
+                ta.focus();
             }
             return;
         }
@@ -1822,6 +1872,373 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
+
+    // ====================================================================
+    // SUBTITLE EDITOR — Whishper-inspired inline segment editing
+    // ====================================================================
+    const editorModal = document.getElementById('subtitleEditorModal');
+    const editorBody = document.getElementById('editorTableBody');
+    const editorAudio = document.getElementById('editorAudio');
+    let editorSegments = [];
+    let editorUndoStack = [];
+    let editorHistoryIdx = -1; // Index into logHistory being edited
+    let editorRecordingUrl = null;
+
+    function openEditor(segments, recordingFilename, historyIdx) {
+        if (!segments || segments.length === 0) return;
+        editorSegments = JSON.parse(JSON.stringify(segments)); // deep copy
+        editorUndoStack = [JSON.parse(JSON.stringify(segments))];
+        editorHistoryIdx = historyIdx ?? -1;
+        editorRecordingUrl = recordingFilename ? '/api/recordings/' + recordingFilename : null;
+
+        // Set up audio player
+        if (editorRecordingUrl) {
+            editorAudio.src = editorRecordingUrl;
+            editorAudio.parentElement.style.display = '';
+        } else {
+            editorAudio.removeAttribute('src');
+            editorAudio.parentElement.style.display = 'none';
+        }
+
+        renderEditorTable();
+        editorModal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeEditor() {
+        editorModal.classList.add('hidden');
+        document.body.style.overflow = '';
+        editorAudio.pause();
+        editorAudio.removeAttribute('src');
+    }
+
+    // Calculate characters per second
+    function calcCPS(seg) {
+        const dur = (seg.end || 0) - (seg.start || 0);
+        if (dur <= 0) return 0;
+        return ((seg.text || '').trim().length / dur).toFixed(1);
+    }
+
+    function cpsClass(cps) {
+        const n = parseFloat(cps);
+        if (n > 30) return 'cps-red';
+        if (n > 25) return 'cps-amber';
+        return '';
+    }
+
+    // Format seconds to MM:SS.mmm for editor
+    function editorFormatTime(seconds) {
+        if (typeof seconds !== 'number' || isNaN(seconds)) return '00:00.000';
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${String(m).padStart(2, '0')}:${s.toFixed(3).padStart(6, '0')}`;
+    }
+
+    // Parse MM:SS.mmm back to seconds
+    function editorParseTime(str) {
+        const parts = (str || '').split(':');
+        if (parts.length === 2) {
+            return (parseFloat(parts[0]) || 0) * 60 + (parseFloat(parts[1]) || 0);
+        }
+        return parseFloat(str) || 0;
+    }
+
+    function renderEditorTable() {
+        editorBody.innerHTML = editorSegments.map((seg, i) => {
+            const cps = calcCPS(seg);
+            return `<tr data-seg="${i}" class="editor-row">
+                <td class="col-idx">${i + 1}</td>
+                <td class="col-time"><input class="editor-time" data-field="start" data-i="${i}" value="${editorFormatTime(seg.start)}"></td>
+                <td class="col-time"><input class="editor-time" data-field="end" data-i="${i}" value="${editorFormatTime(seg.end)}"></td>
+                <td class="col-text"><textarea class="editor-text" data-i="${i}" rows="1">${escapeHTML((seg.text || '').trim())}</textarea></td>
+                <td class="col-cps"><span class="cps-badge ${cpsClass(cps)}">${cps}</span></td>
+                <td class="col-actions">
+                    <button class="editor-action" data-split="${i}" title="Split segment">✂️</button>
+                    <button class="editor-action" data-insert-after="${i}" title="Insert after">➕</button>
+                    <button class="editor-action danger" data-del="${i}" title="Delete">🗑️</button>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    function pushUndo() {
+        editorUndoStack.push(JSON.parse(JSON.stringify(editorSegments)));
+        if (editorUndoStack.length > 50) editorUndoStack.shift();
+    }
+
+    function editorUndo() {
+        if (editorUndoStack.length <= 1) return;
+        editorUndoStack.pop(); // Remove current state
+        editorSegments = JSON.parse(JSON.stringify(editorUndoStack[editorUndoStack.length - 1]));
+        renderEditorTable();
+    }
+
+    function editorSave() {
+        if (editorHistoryIdx >= 0 && editorHistoryIdx < logHistory.length) {
+            logHistory[editorHistoryIdx].segments = JSON.parse(JSON.stringify(editorSegments));
+            logHistory[editorHistoryIdx].text = editorSegments.map(s => (s.text || '').trim()).join(' ');
+            localStorage.setItem('captainslog_history', JSON.stringify(logHistory));
+            renderHistory();
+        }
+        // Also update currentSegments if editing the live transcription
+        if (editorHistoryIdx === 0 || editorHistoryIdx === -1) {
+            currentSegments = JSON.parse(JSON.stringify(editorSegments));
+        }
+        // Flash save button green
+        const btn = document.getElementById('editorSave');
+        btn.textContent = '✅ Saved';
+        setTimeout(() => btn.textContent = '💾 Save', 1500);
+    }
+
+    // Event delegation for editor table
+    editorBody?.addEventListener('input', (e) => {
+        const i = parseInt(e.target.dataset.i);
+        if (isNaN(i) || !editorSegments[i]) return;
+
+        if (e.target.dataset.field === 'start') {
+            editorSegments[i].start = editorParseTime(e.target.value);
+        } else if (e.target.dataset.field === 'end') {
+            editorSegments[i].end = editorParseTime(e.target.value);
+        } else if (e.target.classList.contains('editor-text')) {
+            editorSegments[i].text = e.target.value;
+        }
+        // Update CPS for this row
+        const row = e.target.closest('tr');
+        if (row) {
+            const cps = calcCPS(editorSegments[i]);
+            const badge = row.querySelector('.cps-badge');
+            if (badge) { badge.textContent = cps; badge.className = `cps-badge ${cpsClass(cps)}`; }
+        }
+    });
+
+    editorBody?.addEventListener('focusout', (e) => {
+        if (e.target.matches('.editor-time, .editor-text')) pushUndo();
+    });
+
+    // Click handlers for segment CRUD and timecode seeking
+    editorBody?.addEventListener('click', (e) => {
+        const splitBtn = e.target.closest('[data-split]');
+        const insertBtn = e.target.closest('[data-insert-after]');
+        const delBtn = e.target.closest('[data-del]');
+
+        if (splitBtn) {
+            const i = parseInt(splitBtn.dataset.split);
+            const seg = editorSegments[i];
+            if (!seg) return;
+            pushUndo();
+            const mid = (seg.start + seg.end) / 2;
+            const text = (seg.text || '').trim();
+            const words = text.split(/\s+/);
+            const halfWords = Math.ceil(words.length / 2);
+            const newSeg1 = { start: seg.start, end: mid, text: words.slice(0, halfWords).join(' ') };
+            const newSeg2 = { start: mid, end: seg.end, text: words.slice(halfWords).join(' ') };
+            editorSegments.splice(i, 1, newSeg1, newSeg2);
+            renderEditorTable();
+        } else if (insertBtn) {
+            const i = parseInt(insertBtn.dataset.insertAfter);
+            pushUndo();
+            const prev = editorSegments[i];
+            const next = editorSegments[i + 1];
+            const start = prev ? prev.end : 0;
+            const end = next ? next.start : start + 2;
+            editorSegments.splice(i + 1, 0, { start, end, text: '' });
+            renderEditorTable();
+        } else if (delBtn) {
+            const i = parseInt(delBtn.dataset.del);
+            if (editorSegments.length <= 1) return; // Don't delete last segment
+            pushUndo();
+            editorSegments.splice(i, 1);
+            renderEditorTable();
+        }
+    });
+
+    // Seek audio when clicking a time input
+    editorBody?.addEventListener('focus', (e) => {
+        if (e.target.classList.contains('editor-time') && editorAudio.src) {
+            const t = editorParseTime(e.target.value);
+            editorAudio.currentTime = t;
+        }
+    }, true);
+
+    // Follow-along highlight during playback
+    editorAudio?.addEventListener('timeupdate', () => {
+        const t = editorAudio.currentTime;
+        const rows = editorBody.querySelectorAll('.editor-row');
+        rows.forEach((row, i) => {
+            const seg = editorSegments[i];
+            if (seg && t >= seg.start && t < seg.end) {
+                row.classList.add('seg-active');
+                // Auto-scroll to active row
+                if (!row.classList.contains('was-active')) {
+                    row.classList.add('was-active');
+                    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            } else {
+                row.classList.remove('seg-active', 'was-active');
+            }
+        });
+    });
+
+    // Toolbar buttons
+    document.getElementById('editorClose')?.addEventListener('click', closeEditor);
+    document.getElementById('editorUndo')?.addEventListener('click', editorUndo);
+    document.getElementById('editorSave')?.addEventListener('click', editorSave);
+    document.getElementById('editorSpeed')?.addEventListener('change', (e) => {
+        editorAudio.playbackRate = parseFloat(e.target.value) || 1;
+    });
+    document.getElementById('editorInsert')?.addEventListener('click', () => {
+        pushUndo();
+        const last = editorSegments[editorSegments.length - 1];
+        const start = last ? last.end : 0;
+        editorSegments.push({ start, end: start + 2, text: '' });
+        renderEditorTable();
+    });
+
+    // Export from editor
+    document.getElementById('editorExport')?.addEventListener('click', () => {
+        const menu = document.getElementById('editorExportMenu');
+        menu.style.display = menu.style.display === 'none' ? '' : 'none';
+    });
+    document.getElementById('editorExportMenu')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-editor-fmt]');
+        if (!btn) return;
+        const fmt = btn.dataset.editorFmt;
+        const text = editorSegments.map(s => (s.text || '').trim()).join(' ');
+        doExport(text, editorSegments, fmt, settings.file_title || 'Subtitles');
+        document.getElementById('editorExportMenu').style.display = 'none';
+    });
+
+    // Close on overlay click
+    editorModal?.addEventListener('click', (e) => {
+        if (e.target === editorModal) closeEditor();
+    });
+
+    // Keyboard shortcuts for editor
+    document.addEventListener('keydown', (e) => {
+        if (!editorModal || editorModal.classList.contains('hidden')) return;
+        if (e.key === 'Escape') { closeEditor(); e.preventDefault(); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') { editorSave(); e.preventDefault(); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { editorUndo(); e.preventDefault(); }
+    });
+
+    // Also add follow-along to the main transcript view
+    audioEl?.addEventListener('timeupdate', () => {
+        const t = audioEl.currentTime;
+        const timestamps = transcriptionText.querySelectorAll('[data-seek]');
+        timestamps.forEach(ts => {
+            const segStart = parseFloat(ts.dataset.seek);
+            // Find next timestamp to determine segment end
+            const parent = ts.parentElement;
+            const nextTs = ts.nextElementSibling?.querySelector?.('[data-seek]') ||
+                parent?.nextElementSibling?.querySelector?.('[data-seek]');
+            const segEnd = nextTs ? parseFloat(nextTs.dataset.seek) : segStart + 10;
+            const line = ts.closest('.entry') || ts.parentElement;
+            if (t >= segStart && t < segEnd) {
+                ts.classList.add('seg-playing');
+            } else {
+                ts.classList.remove('seg-playing');
+            }
+        });
+    });
+
+    // ====================================================================
+    // URL TRANSCRIPTION (Buzz/Whishper/Vibe-inspired)
+    // ====================================================================
+    document.getElementById('urlTranscribeBtn')?.addEventListener('click', async () => {
+        const urlInput = document.getElementById('urlInput');
+        const url = urlInput.value.trim();
+        if (!url) { urlInput.focus(); return; }
+
+        const btn = document.getElementById('urlTranscribeBtn');
+        btn.disabled = true;
+        btn.textContent = '⏳ Downloading…';
+        processing.classList.add('active');
+
+        try {
+            const res = await fetch('/api/transcribe-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, language: settings.language || 'en' })
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+            const text = data.text || '';
+            if (text.trim()) {
+                currentSegments = data.segments || [];
+                if (currentSegments.length > 0) {
+                    const formatted = currentSegments.map(seg => {
+                        const start = formatTimestamp(seg.start);
+                        const seekTime = typeof seg.start === 'number' ? seg.start.toFixed(2) : '0';
+                        return `<a class="seg-timestamp" data-seek="${seekTime}" title="[${start}]">[${start}]</a> ${escapeHTML(seg.text)}`;
+                    }).join('\n');
+                    appendTranscription(formatted, true);
+                    currentTranscription = text;
+                } else {
+                    appendTranscription(text.trim(), false);
+                }
+                addToHistory(text.trim(), settings.language || 'en', null, null);
+            } else {
+                appendTranscription('(No speech detected)', false);
+            }
+            urlInput.value = '';
+        } catch (err) {
+            console.error('URL transcription failed:', err);
+            appendTranscription(`Error: ${err.message}`, false);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '🔗 Transcribe';
+            processing.classList.remove('active');
+        }
+    });
+
+    // ====================================================================
+    // FOLDER WATCHER SSE (auto-transcription notifications)
+    // ====================================================================
+    function connectWatcherSSE() {
+        if (!settings.watch_dir) return;
+        const evtSource = new EventSource('/api/watcher/events');
+        evtSource.onmessage = (event) => {
+            try {
+                const ev = JSON.parse(event.data);
+                if (ev.type === 'transcription') {
+                    // Auto-transcribed file — add to history
+                    const text = ev.text || '';
+                    if (text.trim()) {
+                        addToHistory(text.trim(), settings.language || 'en', null, null);
+                        appendTranscription(`📁 Auto-transcribed: ${ev.filename}\n\n${text.trim()}`, false);
+                    }
+                    showToast(`✅ ${ev.filename} transcribed`);
+                } else if (ev.type === 'processing') {
+                    showToast(`⏳ Transcribing ${ev.filename}…`);
+                } else if (ev.type === 'error') {
+                    showToast(`❌ ${ev.filename}: ${ev.error}`);
+                }
+            } catch (e) { /* ignore parse errors */ }
+        };
+        evtSource.onerror = () => {
+            // Reconnect after 5s on error
+            evtSource.close();
+            setTimeout(connectWatcherSSE, 5000);
+        };
+    }
+
+    function showToast(message) {
+        let toast = document.getElementById('watcherToast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'watcherToast';
+            toast.className = 'watcher-toast';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.classList.add('visible');
+        setTimeout(() => toast.classList.remove('visible'), 4000);
+    }
+
+    // Connect after settings are loaded
+    setTimeout(connectWatcherSSE, 2000);
 
     // --- PWA install ---
     let deferredInstallPrompt = null;
